@@ -286,8 +286,7 @@ pub(crate) fn event_glyph(event: &str) -> (&'static str, Color) {
 /// An image id is a hash with a prefix; the first few characters are enough to
 /// tell two of them apart, which is all anyone reads it for.
 pub(crate) fn short_image(image_id: &str) -> String {
-    let digits = image_id.rsplit(':').next().unwrap_or(image_id);
-    digits.chars().take(12).collect()
+    crate::hashing::short(image_id).chars().take(12).collect()
 }
 
 /// One-line summary of an event for the timeline pane.

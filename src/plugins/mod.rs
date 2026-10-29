@@ -12,7 +12,7 @@ pub mod snapshot;
 
 use crate::environment::Environment;
 use crate::error::{codes, err};
-use crate::hashing::hash_dir;
+use crate::hashing::{hash_dir, short};
 use crate::plugin::format::{parse_toml, PluginManifest};
 use crate::trust::{untrusted_plugin_error, TrustKey, TrustStore};
 use anyhow::Result;
@@ -290,7 +290,7 @@ pub fn resolve_pin(repo: &Path, home: &Path, pin: &PluginPin) -> Result<Resolved
             // releases), and a copy an earlier binary left behind must not keep serving as
             // this one's plugin. A differently-keyed directory is simply never read again.
             let content_hash = embedded::example_content_hash();
-            let content_segment = content_hash.rsplit(':').next().unwrap_or(&content_hash);
+            let content_segment = short(&content_hash);
             let dir = home.join(".oat").join("plugins").join("embedded").join(content_segment);
             if !dir.join("oat-plugin.toml").is_file() {
                 embedded::materialize_example(&dir)?;

@@ -16,17 +16,20 @@ ACCEPTANCE_PATH = "src/oidc.ts"
 
 def filed_findings(document):
     """Both shapes this eval can be checked against: the JSON array a reviewer hands
-    `dispatch done --findings-file`, and a work's findings record under the Run's state
-    (every round's findings, flattened)."""
+    `dispatch done --findings-file`, and a work's findings record under the Run's state.
+    A record is judged on round 1 only — the eval measures the initial catch, so a P1
+    filed in a later round (after rework coaching) does not pass it."""
     if isinstance(document, list):
         return document
     if isinstance(document, dict) and isinstance(document.get("rounds"), list):
-        return [f for r in document["rounds"] for f in r.get("findings", [])]
+        rounds = document["rounds"]
+        first = rounds[0] if rounds else {}
+        return first.get("findings", []) if isinstance(first, dict) else []
     return None
 
 
 def cites_acceptance_path(finding):
-    cited = posixpath.normpath(str(finding.get("file", "")).strip().lstrip("./"))
+    cited = posixpath.normpath(str(finding.get("file", "")))
     return cited == ACCEPTANCE_PATH or cited.endswith("/" + ACCEPTANCE_PATH)
 
 

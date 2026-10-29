@@ -1,11 +1,14 @@
 # The review pipeline's golden eval
 
-The worker pipeline has a golden eval; the review pipeline deserves the same. Heterogeneous
-review's premise is that a reviewer on another backend catches reasoning-level defects a
-green test suite cannot — the field evidence was a production auth bypass (an id token
-accepted without verification, P1) in a change whose suite was fully green. This eval keeps
-that premise honest: it replays an auth-bypass-shaped diff through a real reviewer Dispatch
-and requires the P1 to be caught.
+Heterogeneous review's premise: a reviewer on another backend catches reasoning-level
+defects a green test suite cannot. This eval keeps that premise checkable inside this
+repository: it replays an auth-bypass-shaped diff through a real reviewer Dispatch —
+`fixture/defect.patch` plants the defect, `brief.md` briefs the reviewer, `check.py` is the
+pass rule — and requires the P1 to be caught. The fixture is a sanitized, fictional analog
+of a historical production auth bypass from a private repository (an id token accepted
+without verification, in a change whose suite was fully green); the one-off replay of that
+historical diff is a field gate recorded on the tracking issue, not an artifact in this
+repository — private code never enters this public repository.
 
 This is a **human-run eval, not CI**: firing the reviewer Dispatch consumes a real model
 session. Nothing here runs in `cargo test` or CI, on purpose.
@@ -42,9 +45,9 @@ authenticated, and tmux available. `REPO` below is that checkout.
    git checkout -b worker/oidc-signin
    git apply "$REPO"/evals/review/fixture/defect.patch
    git add -A && git commit -m "feat: sign in from the OIDC callback's id token"
-   git checkout main   # the branch is checked out here; free it for the worktree
+   git checkout main   # back on main, freeing the worker/oidc-signin branch for the worktree
    git worktree add ~/signin-worker worker/oidc-signin
-   npm test   # green, defect and all — that is the point
+   (cd ~/signin-worker && npm test)   # green, defect and all — that is the point
    ```
 
 2. Wire the repository to oat-agents: pin the embedded example plugin (it supplies the
@@ -92,14 +95,15 @@ authenticated, and tmux available. `REPO` below is that checkout.
    ```
 
    `meta finish` removes the Run's Dispatch worktrees, `~/signin-worker` among them — rebuild
-   it (step 1's last two commands) before re-running the eval.
+   it (step 1's `git worktree add` command) before re-running the eval.
 
 ## Pass condition
 
 At least one `P1` finding citing `src/oidc.ts` with a line (`file:line`). `check.py` exits
-0 only then; it also accepts the raw JSON array the reviewer filed, if you kept it. A round
-that files the bypass as a P2 or P3, cites the wrong file, omits the line, or files
-nothing, fails.
+0 only then; it also accepts the raw JSON array the reviewer filed, if you kept it. Given a
+work's findings record, it judges round 1 only — the eval measures the initial catch, not
+recovery after rework coaching. A round that files the bypass as a P2 or P3, cites the
+wrong file, omits the line, or files nothing, fails.
 
 ## Reading a failure
 

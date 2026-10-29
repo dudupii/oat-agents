@@ -116,7 +116,10 @@ fn a_stale_same_version_embedded_copy_is_not_served_to_new_runs() {
     // A copy some earlier binary materialized under the version key — same version as this
     // build, content this build no longer embeds. Found in the field: a dev build's plugin
     // changes never reached any Run because this directory kept being served as the plugin.
-    let stale = world.home.join(".oat/plugins/embedded/0.1.0");
+    let stale = world
+        .home
+        .join(".oat/plugins/embedded")
+        .join(oat_agents::plugins::embedded::example_version());
     std::fs::create_dir_all(stale.join("roles/reviewer")).unwrap();
     std::fs::write(
         stale.join("oat-plugin.toml"),

@@ -27,8 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   verifying it while its test suite stays green on both states, a procedure for replaying
   that diff through a reviewer Dispatch on the codex backend (`[reviewer]` in
   `.oat/roles.toml`, settled with `dispatch done --findings-file`), and `check.py`, which
-  passes only when a P1 finding cites the acceptance path's `file:line`. Human-run with a
-  real model, deliberately not CI.
+  passes only when a P1 finding cites the acceptance path's `file:line` — a findings
+  record judged on its first round only, the initial catch. Human-run with a real model,
+  deliberately not CI.
 - Contributor documentation for the public release: `CONTRIBUTING.md`, `SECURITY.md`,
   `CODE_OF_CONDUCT.md`, issue and pull request templates, `CODEOWNERS`, and Dependabot
   configuration. CI now also runs on pull requests.
