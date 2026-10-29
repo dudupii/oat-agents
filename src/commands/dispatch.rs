@@ -40,6 +40,10 @@ pub struct DoneArgs {
     pub report: Option<String>,
     #[arg(long)]
     pub report_file: Option<std::path::PathBuf>,
+    /// Structured findings as a JSON array (`-` reads stdin). The round's PASS/FAIL verdict is
+    /// derived from them and the gate, and recorded beside this Dispatch's settlement.
+    #[arg(long)]
+    pub findings_file: Option<std::path::PathBuf>,
 }
 
 #[derive(Args, Debug)]
@@ -109,6 +113,23 @@ fn bound_dispatch(dispatch: &Option<String>, env: &dyn Environment) -> Result<St
         })
 }
 
+/// `--report-file` and `--findings-file` read the same way: `-` is stdin, anything else a
+/// path, and a file that cannot be read is refused naming it.
+fn read_text_arg(path: &std::path::Path) -> Result<String> {
+    if path.as_os_str() == "-" {
+        use std::io::Read;
+        let mut buf = String::new();
+        std::io::stdin()
+            .read_to_string(&mut buf)
+            .map_err(|e| err(codes::INVALID_INPUT, format!("could not read stdin: {e}")))?;
+        Ok(buf)
+    } else {
+        std::fs::read_to_string(path).map_err(|e| {
+            err(codes::INVALID_INPUT, format!("could not read {}: {e}", path.display()))
+        })
+    }
+}
+
 pub fn run(command: DispatchCommand, env: &dyn Environment, exec: &dyn ExecEnvironments) -> Result<Value> {
     match command {
         DispatchCommand::Done(args) => done(args, env),
@@ -140,17 +161,7 @@ fn done(args: DoneArgs, env: &dyn Environment) -> Result<Value> {
             ))
         }
         (Some(text), None) => text.clone(),
-        (None, Some(path)) if path.as_os_str() == "-" => {
-            use std::io::Read;
-            let mut buf = String::new();
-            std::io::stdin()
-                .read_to_string(&mut buf)
-                .map_err(|e| err(codes::INVALID_INPUT, format!("could not read stdin: {e}")))?;
-            buf
-        }
-        (None, Some(path)) => std::fs::read_to_string(path).map_err(|e| {
-            err(codes::INVALID_INPUT, format!("could not read {}: {e}", path.display()))
-        })?,
+        (None, Some(path)) => read_text_arg(path)?,
         (None, None) => String::new(),
     };
 
@@ -165,11 +176,66 @@ fn done(args: DoneArgs, env: &dyn Environment) -> Result<Value> {
         }
     };
 
+    // Findings are parsed and the round recorded before anything settles, so a round that
+    // cannot be read leaves the Dispatch exactly as it was.
+    let run_record = store.load_run(&run_id)?;
+    let review = match &args.findings_file {
+        Some(path) => {
+            let text = read_text_arg(path)?;
+            let filed = crate::findings::parse_round(&text)?;
+            let name = dispatch.name.clone().ok_or_else(|| {
+                err(
+                    codes::FINDINGS_INVALID,
+                    "findings attach to a named Dispatch; this one was launched with no --name",
+                )
+            })?;
+            let reviewed_commit = if dispatch.worktree.is_empty() {
+                None
+            } else {
+                worktree::current_commit(std::path::Path::new(&dispatch.worktree)).ok()
+            };
+            Some(
+                crate::findings::FindingsStore::for_run(&store, &run_id).append_round(
+                    &name,
+                    &dispatch_id,
+                    filed,
+                    reviewed_commit,
+                    &run_record.rework,
+                )?,
+            )
+        }
+        None => None,
+    };
+
+    // The settlement's report is the message the meta-agent receives: the reviewer's prose,
+    // then the round as the gate derived it — and, when the round cap is reached, the stop
+    // order, so the loop ends in the one channel the meta-agent reads.
+    let mut message = report.clone();
+    if let Some(appended) = &review {
+        let block = crate::findings::render_round(&appended.round, &appended.merged);
+        if message.trim().is_empty() {
+            message = block;
+        } else {
+            message.push_str("\n\n");
+            message.push_str(&block);
+        }
+        if appended.escalated {
+            message.push_str(&format!(
+                "\n\nRound cap reached: work '{}' has had {} failing review rounds (the cap is \
+                 {}); it needs a human. Do not fire another round for it — surface it to the \
+                 operator.",
+                appended.work,
+                appended.round.round,
+                run_record.rework.max_rounds
+            ));
+        }
+    }
+
     dispatch.settled = Some(settlement);
-    dispatch.report = Some(report.clone());
+    dispatch.report = Some(message.clone());
     store.save_dispatch(&dispatch)?;
 
-    store.append_inbox(&run_id, &dispatch_id, MessageKind::MemberDone, &report)?;
+    store.append_inbox(&run_id, &dispatch_id, MessageKind::MemberDone, &message)?;
     log.record(&LogEntry {
         timestamp: now_iso(),
         run_id: run_id.clone(),
@@ -179,7 +245,56 @@ fn done(args: DoneArgs, env: &dyn Environment) -> Result<Value> {
         details: Some(json!({"outcome": args.outcome})),
     })?;
 
-    Ok(json!({"run_id": run_id, "dispatch_id": dispatch_id, "settled": args.outcome}))
+    let mut result = json!({"run_id": run_id, "dispatch_id": dispatch_id, "settled": args.outcome});
+    if let Some(appended) = &review {
+        let open = |severity: crate::findings::Severity| {
+            appended
+                .merged
+                .iter()
+                .filter(|finding| finding.severity == severity && finding.status == crate::findings::FindingStatus::Open)
+                .count()
+        };
+        log.record(&LogEntry {
+            timestamp: now_iso(),
+            run_id: run_id.clone(),
+            dispatch_id: Some(dispatch_id.clone()),
+            agent: Some(dispatch.role.clone()),
+            event: events::REVIEW_RESULT.to_string(),
+            details: Some(json!({
+                "work": appended.work,
+                "round": appended.round.round,
+                "verdict": appended.round.verdict,
+                "open": {"P1": open(crate::findings::Severity::P1), "P2": open(crate::findings::Severity::P2), "P3": open(crate::findings::Severity::P3)},
+                "reviewed_commit": appended.round.reviewed_commit,
+            })),
+        })?;
+        if appended.escalated {
+            log.record(&LogEntry {
+                timestamp: now_iso(),
+                run_id: run_id.clone(),
+                dispatch_id: Some(dispatch_id.clone()),
+                agent: Some(dispatch.role.clone()),
+                event: events::NEEDS_HUMAN.to_string(),
+                details: Some(json!({
+                    "reason": "round_cap",
+                    "work": appended.work,
+                    "rounds": appended.round.round,
+                    "max_rounds": run_record.rework.max_rounds,
+                    "message": format!(
+                        "work '{}' reached the round cap ({}) with its gate still failing",
+                        appended.work, run_record.rework.max_rounds
+                    ),
+                })),
+            })?;
+        }
+        result["review"] = json!({
+            "work": appended.work,
+            "round": appended.round.round,
+            "verdict": appended.round.verdict,
+            "escalated": appended.escalated,
+        });
+    }
+    Ok(result)
 }
 
 fn ask(args: AskArgs, env: &dyn Environment) -> Result<Value> {

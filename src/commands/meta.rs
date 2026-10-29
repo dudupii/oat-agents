@@ -81,9 +81,10 @@ fn fire(args: FireArgs, env: &dyn Environment) -> Result<Value> {
     let (resolved, catalog) = plugins::gate(&repo, env)?;
     let catalog = &catalog;
     let core_role = catalog.core_role(CoreRole::Meta)?;
-    // Settled once, with the plugins: a Run keeps the limits and the launch settings it
-    // started with.
+    // Settled once, with the plugins: a Run keeps the limits, the launch settings and the
+    // rework loop it started with.
     let repo_roles = crate::role::repository::load(&repo, catalog)?;
+    let rework = crate::findings::ReworkSettings::resolve(core_role.rework.clone(), &repo)?;
     let role_limits = crate::concurrency::resolve_limits(&repo_roles, catalog)?;
     let meta_settings = repo_roles.launch_for(CoreRole::Meta.name());
     let backend = match &args.agent {
@@ -145,6 +146,7 @@ fn fire(args: FireArgs, env: &dyn Environment) -> Result<Value> {
         goal: Some(goal.clone()),
         role_limits,
         role_settings: repo_roles.launch,
+        rework,
     };
     store.create_run(&run_record)?;
 

@@ -1,5 +1,6 @@
-description = "Checks a worker's change against its task independently and returns PASS or FAIL with evidence."
+description = "Checks a worker's change against its task independently and settles with structured findings the gate derives a verdict from."
 start = "existing"
 exec_environment = true
 prior_verification = true
 max_concurrent = 3
+# No model is pinned for either backend; a repository sets its own in .oat/roles.toml (ADR-0007).

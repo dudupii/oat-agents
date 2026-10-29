@@ -71,6 +71,21 @@ pub struct CoreRoleToml {
     pub skills: Vec<String>,
     #[serde(default)]
     pub model: BTreeMap<String, ModelToml>,
+    /// The rework loop's bounds (ADR-0009). Only `core/oat-meta.toml` may set them: the loop is
+    /// the meta-agent's to run.
+    #[serde(default)]
+    pub rework: Option<ReworkToml>,
+}
+
+/// One plugin's `[rework]` table in `core/oat-meta.toml`: each field the plugin leaves unset
+/// keeps the core's default, and the repository's `.oat/rework.toml` overrides the result.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReworkToml {
+    #[serde(default)]
+    pub max_rounds: Option<u32>,
+    #[serde(default)]
+    pub p2_required: Option<bool>,
 }
 
 /// Parses `contents` as one of this module's TOML types, turning a syntax error, a type

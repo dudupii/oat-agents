@@ -9,6 +9,7 @@ pub mod init;
 pub mod log;
 pub mod meta;
 pub mod plugin;
+pub mod rework;
 pub mod role;
 pub mod run;
 pub mod tui;

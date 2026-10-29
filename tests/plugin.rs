@@ -392,3 +392,26 @@ fn only_the_console_may_choose_its_backend_and_only_a_known_one() {
         Some(oat_agents::role::Backend::Codex)
     );
 }
+
+#[test]
+fn only_oat_meta_may_set_the_rework_bounds_and_only_sane_ones() {
+    let tmp = tempfile::tempdir().unwrap();
+    let a = tmp.path().join("plugin-a");
+    write_manifest(&a, "plugin-a");
+    write_core_instruction(&a, "oat-meta", "Coordinate.");
+    write_core_instruction(&a, "oat-console", "Observe.");
+    std::fs::write(a.join("core/oat-console.toml"), "[rework]\nmax_rounds = 2\n").unwrap();
+    std::fs::write(a.join("core/oat-meta.toml"), "[rework]\nmax_rounds = 0\n").unwrap();
+
+    let text = errors_text(&load::load_plugin(&a).unwrap_err());
+    assert!(text.contains("core/oat-console.toml sets `[rework]`"), "{text}");
+    assert!(text.contains("max_rounds = 0; a work gets at least one review round"), "{text}");
+
+    std::fs::write(a.join("core/oat-console.toml"), "").unwrap();
+    std::fs::write(a.join("core/oat-meta.toml"), "[rework]\nmax_rounds = 2\n").unwrap();
+    let loaded = load::load_plugin(&a).unwrap();
+    assert_eq!(
+        loaded.meta.unwrap().rework,
+        oat_agents::findings::ReworkSettings { max_rounds: 2, ..Default::default() }
+    );
+}

@@ -91,7 +91,9 @@ real ones.
 4. When the meta-agent needs a decision it can't make from the goal, its row shows 🙋. Select
    it, press `enter` and type your answer. Otherwise it doesn't ask.
 5. When a review fails, the fix goes to a *new* member agent. The failed attempt keeps its row,
-   its report and its place in the workflow log.
+   its report and its place in the workflow log. The loop is bounded: rounds repeat until the
+   review's findings close, and a work that keeps failing is handed to you rather than
+   circling.
 6. The meta-agent closes the Run with `meta finish` and prints a receipt. The work is on the
    Run's `oat/<run>/…` branches, and you review and merge it.
 

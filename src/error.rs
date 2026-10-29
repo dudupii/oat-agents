@@ -64,6 +64,8 @@ pub mod codes {
     pub const TMUX_MISSING: &str = "tmux_missing";
     pub const INVALID_LOCAL_SETTINGS: &str = "invalid_local_settings";
     pub const TRANSCRIPT_NOT_FOUND: &str = "transcript_not_found";
+    pub const FINDINGS_INVALID: &str = "findings_invalid";
+    pub const REWORK_SETTINGS_INVALID: &str = "rework_settings_invalid";
     pub const META_NOT_FOUND: &str = "meta_not_found";
     pub const CONSOLE_NOT_FOUND: &str = "console_not_found";
     pub const INTERNAL_ERROR: &str = "internal_error";

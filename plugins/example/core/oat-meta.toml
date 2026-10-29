@@ -1,0 +1,5 @@
+# The rework loop's bounds for teams this plugin serves (ADR-0009). A repository overrides
+# these in its own .oat/rework.toml.
+[rework]
+max_rounds = 3
+p2_required = true

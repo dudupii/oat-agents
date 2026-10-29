@@ -46,6 +46,9 @@ pub struct RunRecord {
     /// settled at `meta fire` like `role_limits`. A role not listed takes its plugin's.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub role_settings: std::collections::BTreeMap<String, crate::role::repository::LaunchSettings>,
+    /// How this Run runs its rework loop, settled at `meta fire` from `.oat/rework.toml`.
+    #[serde(default, skip_serializing_if = "crate::findings::ReworkSettings::is_default")]
+    pub rework: crate::findings::ReworkSettings,
 }
 
 impl RunRecord {
@@ -193,6 +196,11 @@ impl Store {
     /// here, never by re-resolving `.oat/plugins.toml`.
     pub fn run_plugin_snapshot_dir(&self, run_id: &str) -> PathBuf {
         self.run_dir(run_id).join("plugins")
+    }
+
+    /// Where a Run's findings records live, one JSON file per piece of named work.
+    pub fn findings_dir(&self, run_id: &str) -> PathBuf {
+        self.run_dir(run_id).join("findings")
     }
 
     pub fn create_run(&self, run: &RunRecord) -> Result<()> {
@@ -565,6 +573,7 @@ mod tests {
             goal: None,
             role_limits: Default::default(),
             role_settings: Default::default(),
+            rework: Default::default(),
         };
         store.create_run(&empty).unwrap();
         assert_eq!(store.load_run("r1").unwrap().plugins, Vec::new());
@@ -576,9 +585,19 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(old.goal.as_deref(), Some("Glaze every pot"));
+        assert_eq!(old.rework, crate::findings::ReworkSettings::default(), "a record written before the loop keeps the defaults");
         let saved = serde_json::to_value(&old).unwrap();
         assert_eq!(saved["goal"], "Glaze every pot");
         assert!(saved.get("big_plan").is_none());
+        assert!(saved.get("rework").is_none(), "default settings add no key");
+
+        let tuned = RunRecord {
+            rework: crate::findings::ReworkSettings { max_rounds: 2, p2_required: false },
+            ..old.clone()
+        };
+        let saved = serde_json::to_value(&tuned).unwrap();
+        assert_eq!(saved["rework"]["max_rounds"], 2);
+        assert_eq!(saved["rework"]["p2_required"], false);
 
         let mut with_plugins = empty.clone();
         with_plugins.id = "r2".to_string();

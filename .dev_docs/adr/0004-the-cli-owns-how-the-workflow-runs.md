@@ -38,4 +38,5 @@ must supply (ADR-0002) and which follow the baseline in the prompt.
   core ships. The test: would the workflow stall, lose a message or misread the system
   without it? Then it is baseline. Otherwise it belongs in a plugin.
 - `meta fire` carries no coordination policy. A limit on retries or review rounds is a
-  plugin's instruction or a goal's text.
+  plugin's instruction or a goal's text. The rework loop's bounds are the one crossing: a
+  plugin default the repository overrides, read by the CLI as data (ADR-0009).

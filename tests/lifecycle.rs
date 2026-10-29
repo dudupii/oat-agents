@@ -40,6 +40,7 @@ fn fixture_catalog() -> oat_agents::role::memory::InMemoryCatalog {
                 models: BTreeMap::new(),
                 skills: Vec::new(),
                 backend: None,
+                rework: Default::default(),
             },
         )
         .with_core_role(
@@ -49,6 +50,7 @@ fn fixture_catalog() -> oat_agents::role::memory::InMemoryCatalog {
                 models: BTreeMap::new(),
                 skills: Vec::new(),
                 backend: None,
+                rework: Default::default(),
             },
         )
         .build()
@@ -174,6 +176,7 @@ fn role_fire_defaults_to_the_run_s_recorded_backend() {
                 models: BTreeMap::new(),
                 skills: Vec::new(),
                 backend: None,
+                rework: Default::default(),
             },
         )
         .build();

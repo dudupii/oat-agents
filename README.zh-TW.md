@@ -70,7 +70,7 @@ member agent 就是原生的 Claude Code 或 Codex，用的是它自己的互動
 2. meta-agent 用 `role fire` 派出 member agent：一個 planner、兩個 worker、一個 reviewer，或是你的 plugin 定義的任何角色。程式碼它自己不寫。
 3. member 透過 Run inbox 寫信給 meta-agent。做完的寄報告（`dispatch done`），卡住的提問（`dispatch ask`）並等回覆。inbox 只有 meta-agent 會讀。
 4. meta-agent 遇到光看目標決定不了的事，它那一列會出現 🙋。選它、按 `enter`，打字回答就行。其他時候它不會來問你。
-5. 審查沒過時，修正會交給一個*新的* member agent。失敗的那次嘗試還留著它那一列、它的報告，以及它在 workflow log 裡的紀錄。
+5. 審查沒過時，修正會交給一個*新的* member agent。失敗的那次嘗試還留著它那一列、它的報告，以及它在 workflow log 裡的紀錄。迴圈有上限：一輪輪做到審查的 findings 收完為止；一直沒過的工作會交還給你，不會無限打轉。
 6. meta-agent 用 `meta finish` 結束 Run，並印出收據。成果在這個 Run 的 `oat/<run>/…` branch 上，由你審查、合併。
 
 要站多近由你決定。可以留在高處：看 roster、打開 meta-agent 的 checklist（`ctrl+l`），或直接問 meta-agent 進度如何。也可以下到任何一個 member，看它的 diff，直接跟它一起做。

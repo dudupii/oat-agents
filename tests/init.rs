@@ -108,6 +108,63 @@ fn init_with_a_path_plugin_pins_its_current_content_hash() {
 }
 
 #[test]
+fn a_stale_same_version_embedded_copy_is_not_served_to_new_runs() {
+    let repo = TempRepo::new();
+    let world = common::TestWorld::new();
+    let env = world.env();
+
+    // A copy some earlier binary materialized under the version key — same version as this
+    // build, content this build no longer embeds. Found in the field: a dev build's plugin
+    // changes never reached any Run because this directory kept being served as the plugin.
+    let stale = world
+        .home
+        .join(".oat/plugins/embedded")
+        .join(oat_agents::plugins::embedded::example_version());
+    std::fs::create_dir_all(stale.join("roles/reviewer")).unwrap();
+    std::fs::write(
+        stale.join("oat-plugin.toml"),
+        "format_version = 1\nname = \"example\"\ndescription = \"stale\"\n",
+    )
+    .unwrap();
+    std::fs::write(stale.join("roles/reviewer/instructions.md"), "# STALE reviewer\n").unwrap();
+
+    run(parse(&["init", "--repo", &repo.path().to_string_lossy()]), &env).unwrap();
+
+    let mut store = oat_agents::trust::TrustStore::open(&env).unwrap();
+    store.grant(
+        oat_agents::trust::TrustKey::Embedded {
+            name: "example".to_string(),
+            version: oat_agents::plugins::embedded::example_version().to_string(),
+        },
+        "2026-01-01T00:00:00Z".to_string(),
+    )
+    .unwrap();
+
+    run(
+        parse(&[
+            "meta", "fire", "--prompt", "plan", "--repo", &repo.path().to_string_lossy(),
+            "--name", "embedded-fresh", "--agent", "claude",
+        ]),
+        &env,
+    )
+    .unwrap();
+
+    let snapshot = std::fs::read_to_string(
+        world.scratch.path().join("state/runs/embedded-fresh/plugins/000-example/roles/reviewer/instructions.md"),
+    )
+    .unwrap();
+    assert_eq!(
+        snapshot,
+        std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("plugins/example/roles/reviewer/instructions.md")
+        )
+        .unwrap(),
+        "the Run's snapshot carries what this build embeds, not the stale copy"
+    );
+}
+
+#[test]
 fn init_also_scaffolds_an_execution_profile_when_asked() {
     let repo = TempRepo::new();
     let home = tempfile::tempdir().unwrap();

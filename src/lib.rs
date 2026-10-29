@@ -10,6 +10,7 @@ pub mod env;
 pub mod environment;
 pub mod error;
 pub mod event_log;
+pub mod findings;
 pub mod hashing;
 pub mod launch;
 pub mod liveness;
@@ -65,6 +66,12 @@ pub enum TopCommand {
     Log {
         #[command(subcommand)]
         command: commands::log::LogCommand,
+    },
+    /// The rework loop: next-round briefs for the worker and the reviewer, and where a work's
+    /// gate stands.
+    Rework {
+        #[command(subcommand)]
+        command: commands::rework::ReworkCommand,
     },
     /// The goal a Run was fired with.
     #[command(alias = "big-plan")]
@@ -141,6 +148,7 @@ pub fn execute_with_exec(
         TopCommand::Run { command } => commands::run::run(command, env, exec),
         TopCommand::Dispatch { command } => commands::dispatch::run(command, env, exec),
         TopCommand::Log { command } => commands::log::run(command, env),
+        TopCommand::Rework { command } => commands::rework::run(command, env),
         TopCommand::Goal { command } => commands::goal::run(command, env),
         TopCommand::Checklist { command } => commands::checklist::run(command, env),
         TopCommand::Env { command } => {
