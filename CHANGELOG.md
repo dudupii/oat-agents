@@ -22,6 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   settled into the Run at `meta fire` — and a work still failing at its cap is escalated with
   a `needs_human` entry instead of looping. The example plugin's reviewer now files findings
   and its meta-agent works the loop.
+- A golden eval for the review pipeline, `evals/review/`: a synthetic TypeScript fixture
+  (a base repository plus `defect.patch`) whose change accepts an OIDC id token without
+  verifying it while its test suite stays green on both states, a procedure for replaying
+  that diff through a reviewer Dispatch on the codex backend (`[reviewer]` in
+  `.oat/roles.toml`, settled with `dispatch done --findings-file`), and `check.py`, which
+  passes only when a P1 finding cites the acceptance path's `file:line`. Human-run with a
+  real model, deliberately not CI.
 - Contributor documentation for the public release: `CONTRIBUTING.md`, `SECURITY.md`,
   `CODE_OF_CONDUCT.md`, issue and pull request templates, `CODEOWNERS`, and Dependabot
   configuration. CI now also runs on pull requests.
