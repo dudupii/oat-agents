@@ -19,19 +19,24 @@ pub struct Rates {
 const CACHE_WRITE_5M: f64 = 1.25;
 const CACHE_WRITE_1H: f64 = 2.0;
 const CACHE_READ: f64 = 0.1;
+/// Opus 5.5 and Sonnet 5.5 read cached tokens at half the usual multiple.
+const CACHE_READ_5_5: f64 = 0.05;
 
 /// Published standard-tier rates, per million tokens. Matching is by prefix so a dated
 /// snapshot id prices like its family; a more specific prefix is listed before a shorter one
 /// it shares a start with.
 ///
-/// Claude: Anthropic's rates as of 2026-06. GPT: OpenAI's short-context rates as of 2026-09
+/// Claude: Anthropic's rates as of 2026-10-23 (platform.claude.com/docs/en/about-claude/pricing).
+/// GPT: OpenAI's short-context rates as of 2026-09
 /// (developers.openai.com/api/docs/pricing), where a cache write costs 1.25x input and a
 /// cached read 0.1x, as Claude's five-minute cache does. Codex caps a prompt below the
 /// long-context tier, so that tier is not priced. A Codex model with no published API rate —
 /// `codex-auto-review`, the model its guardian reviews run on — prices as unknown.
 pub fn rates(model: &str) -> Option<Rates> {
-    let table: [(&str, f64, f64, f64); 11] = [
+    let table: [(&str, f64, f64, f64); 13] = [
+        ("claude-opus-5-5", 4.0, 20.0, CACHE_READ_5_5),
         ("claude-opus", 5.0, 25.0, CACHE_READ),
+        ("claude-sonnet-5-5", 2.0, 10.0, CACHE_READ_5_5),
         ("claude-sonnet-5", 2.0, 10.0, CACHE_READ),
         ("claude-sonnet-4", 3.0, 15.0, CACHE_READ),
         ("claude-haiku-4", 1.0, 5.0, CACHE_READ),
@@ -238,6 +243,23 @@ mod tests {
         assert!((cost("gpt-5.5") - 35.5).abs() < 1e-9);
         assert!(rates("codex-auto-review").is_none());
         assert!(rates("gpt-4o").is_none());
+    }
+
+    #[test]
+    fn opus_and_sonnet_5_5_price_by_their_own_rates_not_their_family_prefix() {
+        let tokens = Tokens {
+            input: 1_000_000,
+            output: 1_000_000,
+            cache_write_5m: 1_000_000,
+            cache_write_1h: 0,
+            cache_read: 1_000_000,
+        };
+        let cost = |model: &str| tokens.cost(model).unwrap();
+        // input + output + 5-minute cache write (1.25x input) + cache read
+        assert!((cost("claude-opus-5-5") - (4.0 + 20.0 + 5.0 + 0.2)).abs() < 1e-9);
+        assert!((cost("claude-sonnet-5-5") - (2.0 + 10.0 + 2.5 + 0.1)).abs() < 1e-9);
+        assert!((cost("claude-opus-5") - (5.0 + 25.0 + 6.25 + 0.5)).abs() < 1e-9);
+        assert!((cost("claude-sonnet-5") - (2.0 + 10.0 + 2.5 + 0.2)).abs() < 1e-9);
     }
 
     #[test]

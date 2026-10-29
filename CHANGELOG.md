@@ -75,6 +75,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hash instead of the binary version, so a build whose plugin content changed is no longer
   served the copy an earlier same-version binary left behind. Found while field-running the
   review eval: a dev build's reviewer contract never reached any Run.
+- Claude Opus 5.5 and Sonnet 5.5 are priced at their own published rates. Opus 5.5 matched the
+  `claude-opus` prefix and was priced at $5/$25 per million tokens instead of $4/$20, and both
+  models read cached tokens at 0.05x input, not 0.1x.
 - `cargo clippy` on the current stable toolchain passes again, so CI on `main` is green.
 - The live view's log page no longer tells a Codex agent that Claude Code's session directory
   is not reachable; it names the agent's own backend.
