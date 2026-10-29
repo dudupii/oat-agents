@@ -100,3 +100,20 @@ in `#[cfg(test)]` inside the module. New user-visible behavior needs a test and 
   reaches `main` in one person-merged PR. Conventional Commits (`feat:`, `fix:`, `docs:`, …).
 - Every commit needs a DCO `Signed-off-by` line — commit with `git commit -s`.
 - Never delete or rewrite an ADR that has reached `main`.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in this repo's GitHub Issues (dudupii/oat-agents); use the `gh` CLI. See
+`docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical triage roles, used as label strings as-is. See
+`docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: vocabulary in `.dev_docs/CONTEXT.md`, decisions in `.dev_docs/adr/`. See
+`docs/agents/domain.md`.
