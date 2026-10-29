@@ -70,6 +70,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The embedded example plugin's cache under `~/.oat/plugins/embedded/` is keyed by its content
+  hash instead of the binary version, so a build whose plugin content changed is no longer
+  served the copy an earlier same-version binary left behind. Found while field-running the
+  review eval: a dev build's reviewer contract never reached any Run.
 - `cargo clippy` on the current stable toolchain passes again, so CI on `main` is green.
 - The live view's log page no longer tells a Codex agent that Claude Code's session directory
   is not reachable; it names the agent's own backend.

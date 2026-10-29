@@ -285,7 +285,13 @@ pub fn resolve_pin(repo: &Path, home: &Path, pin: &PluginPin) -> Result<Resolved
                 ));
             }
             let version = embedded::example_version().to_string();
-            let dir = home.join(".oat").join("plugins").join("embedded").join(&version);
+            // The materialization is keyed by content hash, not the binary version: two
+            // builds of the same version can embed different content (a dev build between
+            // releases), and a copy an earlier binary left behind must not keep serving as
+            // this one's plugin. A differently-keyed directory is simply never read again.
+            let content_hash = embedded::example_content_hash();
+            let content_segment = content_hash.rsplit(':').next().unwrap_or(&content_hash);
+            let dir = home.join(".oat").join("plugins").join("embedded").join(content_segment);
             if !dir.join("oat-plugin.toml").is_file() {
                 embedded::materialize_example(&dir)?;
             }

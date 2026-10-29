@@ -42,6 +42,7 @@ authenticated, and tmux available. `REPO` below is that checkout.
    git checkout -b worker/oidc-signin
    git apply "$REPO"/evals/review/fixture/defect.patch
    git add -A && git commit -m "feat: sign in from the OIDC callback's id token"
+   git checkout main   # the branch is checked out here; free it for the worktree
    git worktree add ~/signin-worker worker/oidc-signin
    npm test   # green, defect and all — that is the point
    ```
@@ -57,10 +58,12 @@ authenticated, and tmux available. `REPO` below is that checkout.
    backend = "codex"
 
    [reviewer.model.codex]
-   model = "gpt-5.5"
-   reasoning_effort = "high"
+   model = "<a model your codex backend offers>"
    EOF
    ```
+
+   The model name is whatever your `codex` actually serves (see its own config) — a name the
+   backend rejects kills the session with a stream error partway through.
 
 3. Start the Run and fire the reviewer Dispatch at the fixture worktree. `role fire` runs
    inside a Run, hence `OAT_RUN_ID`; `--no-exec` because this review is pure reasoning by
@@ -87,6 +90,9 @@ authenticated, and tmux available. `REPO` below is that checkout.
      ~/.local/state/oat-agents/runs/$OAT_RUN_ID/findings/oidc-signin.json
    oat-agents meta finish --run "$OAT_RUN_ID"
    ```
+
+   `meta finish` removes the Run's Dispatch worktrees, `~/signin-worker` among them — rebuild
+   it (step 1's last two commands) before re-running the eval.
 
 ## Pass condition
 
