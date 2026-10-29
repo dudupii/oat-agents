@@ -56,6 +56,9 @@ fn the_example_plugin_loads_with_no_errors_through_the_external_plugin_path() {
 
     // No role pins a model: each backend falls back to its own default.
     assert!(!planner.models.contains_key(&Backend::Claude));
+    assert!(!planner.models.contains_key(&Backend::Codex));
     assert!(!worker.models.contains_key(&Backend::Claude));
+    assert!(!worker.models.contains_key(&Backend::Codex));
     assert!(!reviewer.models.contains_key(&Backend::Claude));
+    assert!(!reviewer.models.contains_key(&Backend::Codex));
 }

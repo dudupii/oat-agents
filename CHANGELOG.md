@@ -41,6 +41,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The example plugin's reviewer carries an explicit review contract: hunt the defects tests
+  cannot see — a credential accepted without verification, a write that loses data when it
+  fails halfway, a stated contract silently broken — grade findings by the defect's weight (a
+  style nit is never above `P3`), and judge by reading rather than re-running green suites,
+  which the execution environment and the claude side already do well; on codex, review is
+  pure reasoning.
 - The example plugin's `branch-naming` skill is replaced by `committing`. Its rule had a worker
   switch to a `<role>/<slug>` branch, leaving the Dispatch's own branch — the one the
   meta-agent merges and cleanup checks — without the work.

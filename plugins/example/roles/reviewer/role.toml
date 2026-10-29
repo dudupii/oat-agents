@@ -3,3 +3,4 @@ start = "existing"
 exec_environment = true
 prior_verification = true
 max_concurrent = 3
+# No model is pinned for either backend; a repository sets its own in .oat/roles.toml (ADR-0007).
