@@ -22,6 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   settled into the Run at `meta fire` — and a work still failing at its cap is escalated with
   a `needs_human` entry instead of looping. The example plugin's reviewer now files findings
   and its meta-agent works the loop.
+- A golden eval for the review pipeline, `evals/review/`: a synthetic TypeScript fixture
+  (a base repository plus `defect.patch`) whose change accepts an OIDC id token without
+  verifying it while its test suite stays green on both states, a procedure for replaying
+  that diff through a reviewer Dispatch on the codex backend (`[reviewer]` in
+  `.oat/roles.toml`, settled with `dispatch done --findings-file`), and `check.py`, which
+  passes only when a P1 finding cites the acceptance path's `file:line` — a findings
+  record judged on its first round only, the initial catch. Human-run with a real model,
+  deliberately not CI.
 - Contributor documentation for the public release: `CONTRIBUTING.md`, `SECURITY.md`,
   `CODE_OF_CONDUCT.md`, issue and pull request templates, `CODEOWNERS`, and Dependabot
   configuration. CI now also runs on pull requests.
@@ -41,6 +49,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The example plugin's reviewer carries an explicit review contract: hunt the defects tests
+  cannot see — a credential accepted without verification, a write that loses data when it
+  fails halfway, a stated contract silently broken — grade findings by the defect's weight (a
+  style nit is never above `P3`), and judge by reading rather than re-running green suites,
+  which the execution environment and the claude side already do well; on codex, review is
+  pure reasoning.
 - The example plugin's `branch-naming` skill is replaced by `committing`. Its rule had a worker
   switch to a `<role>/<slug>` branch, leaving the Dispatch's own branch — the one the
   meta-agent merges and cleanup checks — without the work.
@@ -57,6 +71,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The embedded example plugin's cache under `~/.oat/plugins/embedded/` is keyed by its content
+  hash instead of the binary version, so a build whose plugin content changed is no longer
+  served the copy an earlier same-version binary left behind. Found while field-running the
+  review eval: a dev build's reviewer contract never reached any Run.
 - `cargo clippy` on the current stable toolchain passes again, so CI on `main` is green.
 - The live view's log page no longer tells a Codex agent that Claude Code's session directory
   is not reachable; it names the agent's own backend.

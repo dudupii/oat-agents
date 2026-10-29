@@ -64,6 +64,12 @@ pub fn hash_dir(dir: &Path) -> io::Result<String> {
     })))
 }
 
+/// The digest without its `sha256:` prefix: what a cache directory is keyed by and what a
+/// display surface shortens, the prefix being implied wherever either appears.
+pub fn short(hash: &str) -> &str {
+    hash.rsplit(':').next().unwrap_or(hash)
+}
+
 fn collect_files(root: &Path, dir: &Path, out: &mut Vec<std::path::PathBuf>) -> io::Result<()> {
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
@@ -103,6 +109,12 @@ mod tests {
         let second = hash_dir(dir.path()).unwrap();
         assert_eq!(first, second);
         assert!(first.starts_with("sha256:"));
+    }
+
+    #[test]
+    fn short_drops_the_algorithm_prefix() {
+        assert_eq!(short("sha256:0123456789abcdef"), "0123456789abcdef");
+        assert_eq!(short("0123456789abcdef"), "0123456789abcdef");
     }
 
     #[test]

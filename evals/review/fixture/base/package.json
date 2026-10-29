@@ -1,0 +1,8 @@
+{
+  "name": "bramble-signin",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test src/oidc.test.ts"
+  }
+}
