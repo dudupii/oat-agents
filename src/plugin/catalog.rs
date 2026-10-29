@@ -168,10 +168,30 @@ fn combine_core_role<'a>(
         backend = Some(chosen);
     }
 
+    // The rework loop's bounds follow the same rule as the backend: one plugin sets them, and
+    // two setting them is a conflict reported by name (ADR-0009).
+    let mut rework = crate::findings::ReworkSettings::default();
+    let mut rework_owner: Option<&str> = None;
+    for (plugin, core) in &contributions {
+        if core.rework.is_default() {
+            continue;
+        }
+        if let Some(existing_plugin) = rework_owner {
+            errors.push(PluginError::combination(format!(
+                "the rework loop's bounds for {instruction_file} are set by both plugin '{existing_plugin}' and plugin '{}'",
+                plugin.name
+            )));
+            continue;
+        }
+        rework_owner = Some(plugin.name.as_str());
+        rework = core.rework.clone();
+    }
+
     Some(CoreRoleDefinition {
         instructions,
         models,
         skills,
         backend,
+        rework,
     })
 }

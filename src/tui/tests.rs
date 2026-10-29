@@ -166,6 +166,7 @@ fn fixture() -> Fixture {
         goal: Some("# Glaze every pot\n\nThen fire the kiln.".to_string()),
         role_limits: Default::default(),
         role_settings: Default::default(),
+        rework: Default::default(),
     };
     store.create_run(&open).unwrap();
     store

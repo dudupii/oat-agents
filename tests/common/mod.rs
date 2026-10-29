@@ -296,11 +296,20 @@ pub fn install_console_plugin(world: &TestWorld, repo: &Path, console_instructio
 }
 
 pub fn install_pottery_plugin(world: &TestWorld, repo: &Path) {
-    PluginBuilder::new(repo, "fixture-plugin", "fixture-plugin")
+    install_pottery_plugin_with_rework(world, repo, None)
+}
+
+/// The pottery plugin with `[rework]` in its `core/oat-meta.toml` (ADR-0009): the plugin-side
+/// source of the Run's rework bounds, which a repository's `.oat/rework.toml` then overrides.
+pub fn install_pottery_plugin_with_rework(world: &TestWorld, repo: &Path, rework: Option<&str>) {
+    let mut plugin = PluginBuilder::new(repo, "fixture-plugin", "fixture-plugin")
         .role_with("worker", "fresh", "Write the pottery this task asks for.", &["glazing"], false, false)
         .role("reviewer", "existing", "Review the pottery someone else made.")
         .skill("glazing", &[("SKILL.md", b"# Glazing", false)])
         .core("oat-meta", "Coordinate the pottery workshop.")
-        .core("oat-console", "Observe the pottery workshop.")
-        .finish(world, repo, "fixture-plugin", "fixture-plugin");
+        .core("oat-console", "Observe the pottery workshop.");
+    if let Some(rework) = rework {
+        plugin = plugin.core_toml("oat-meta", rework);
+    }
+    plugin.finish(world, repo, "fixture-plugin", "fixture-plugin");
 }

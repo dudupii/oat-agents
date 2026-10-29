@@ -7,8 +7,13 @@ Delegate each piece of the plan to `worker`, firing pieces that do not depend on
 together. Once a `worker` Dispatch settles, fire `reviewer` with `--from` its worktree and the
 same `--name`, quoting the task the worker was given.
 
-When a `reviewer` reports PASS, merge the worker's branch into your own worktree, record the
-decision, and release both Dispatches. When it reports FAIL, delegate a correction to a new
-`worker` Dispatch under the same name that quotes the reviewer's findings and names the failed
-branch to start from. After two failed corrections of the same piece, stop and raise it as
-`needs-human`.
+A review that settles files structured findings, and its PASS or FAIL comes from the gate:
+PASS means every `P1` (and `P2`) finding is closed. On PASS, merge the worker's branch into
+your own worktree, record the decision, and release both Dispatches.
+
+On FAIL, run `oat rework brief --name <work>` and fire the `worker` Dispatch it names with the
+brief it returns, verbatim. When that fix settles, run `oat rework delta --name <work>` and
+fire `reviewer` with `--from` the fix's worktree under the name the delta names. Keep to the
+loop: each round's brief is built for you, so do not rewrite it. When a `needs_human` entry
+reports a work at its round cap, stop — do not fire another round — and surface it to the
+human.

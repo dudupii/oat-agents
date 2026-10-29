@@ -168,6 +168,7 @@ fn each_repositorys_read_only_run_listing_only_shows_its_own_runs() {
         goal: None,
         role_limits: Default::default(),
         role_settings: Default::default(),
+        rework: Default::default(),
     };
     store.create_run(&base).unwrap();
     let mut run_b = base.clone();

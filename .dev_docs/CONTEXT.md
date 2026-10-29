@@ -34,6 +34,11 @@ One launch of one role inside a Run: one agent session, one worktree, one settle
 *Avoid*: **task** — several Dispatches can serve the same piece of work (a correction round
 is a new Dispatch), and conflating them loses which attempt said what.
 
+**Work**
+One piece of the goal, identified by what its Dispatches fire under: `kiln`, `kiln-fix1` and
+`kiln-fix2` are one work. A work's checklist links and review findings are recorded under its
+canonical name, the shortest of those.
+
 **hash_id**
 The stable identifier of one agent execution, `<role>-<4 hex>-<name>`, quoted in every log
 line about it. `<name>` is what the Dispatch is for — its `role fire --name`, or the branch of
@@ -52,6 +57,30 @@ the same work.
 **Settle**
 What an agent does to end its own Dispatch with an outcome and a report. A Dispatch that is
 not settled is not finished, whatever its terminal shows.
+
+**Finding**
+One problem a review round filed against a work: its id, its severity (P1 must fix, P2 should,
+P3 cosmetic), its file and line, and the fix it requires. Findings carry across a work's
+rounds, merged by id — a re-review files the same finding again with its new status.
+*Avoid*: **issue** — an issue is the repository's, not a round's.
+
+**Review round**
+One review of one work: the findings its reviewer filed, the verdict the gate derived from
+them, and the commit the review saw.
+
+**Gate**
+The rule that turns a round's findings into its verdict: PASS only when no finding is open —
+every P1 fixed, never waived; every P2 fixed while the Run requires it; a P3 fixed or waived
+with a note.
+*Avoid*: **the reviewer's verdict** — a reviewer files findings; the gate, not the reviewer,
+says PASS or FAIL.
+
+**Rework loop**
+The rounds a failed gate sets off: `rework brief` hands the worker the original task and the
+open findings, `rework delta` hands the reviewer the findings and only the fix diff, until the
+gate passes or the work reaches its round cap and is escalated to the human (`needs_human`).
+*Avoid*: **correction** — the earlier name for a fix round. The cap is the Run's
+(`max_rounds`), not a count the meta-agent keeps.
 
 ### Communication
 

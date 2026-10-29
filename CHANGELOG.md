@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A first-class rework loop around review. A review settles with structured findings
+  (`dispatch done --findings-file`), each carrying an id, a severity (`P1`/`P2`/`P3`), its
+  file and line, and the fix it requires; the gate derives the round's PASS or FAIL from them
+  while the Dispatch still settles `succeeded` — a failing review is a completed review. A
+  re-review merges its findings into the work's record by id, so a finding's status carries
+  across rounds. `oat rework brief` hands the worker the original task (recorded verbatim per
+  Dispatch) plus the open findings, `oat rework delta` hands the reviewer the findings and
+  only the fix diff, and `oat rework show` reports where a work's gate stands. Rounds are
+  capped — `max_rounds`, default 3, and `p2_required`, the meta-agent plugin's defaults
+  (`[rework]` in its `core/oat-meta.toml`) overridden field by field by `.oat/rework.toml`,
+  settled into the Run at `meta fire` — and a work still failing at its cap is escalated with
+  a `needs_human` entry instead of looping. The example plugin's reviewer now files findings
+  and its meta-agent works the loop.
 - Contributor documentation for the public release: `CONTRIBUTING.md`, `SECURITY.md`,
   `CODE_OF_CONDUCT.md`, issue and pull request templates, `CODEOWNERS`, and Dependabot
   configuration. CI now also runs on pull requests.

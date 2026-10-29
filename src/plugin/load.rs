@@ -34,6 +34,7 @@ pub struct LoadedCoreRole {
     pub skills: Vec<SkillRef>,
     pub models: BTreeMap<Backend, ModelSetting>,
     pub backend: Option<Backend>,
+    pub rework: crate::findings::ReworkSettings,
 }
 
 #[derive(Debug, Clone)]
@@ -363,6 +364,38 @@ fn load_core_role(
 
     let resolved_skills = resolve_skills(dir, &toml_file, &core_toml.skills, skills, errors);
     let models = convert_models(dir, &toml_file, core_toml.model, errors);
+    let rework = match core_toml.rework {
+        None => crate::findings::ReworkSettings::default(),
+        Some(_) if slug != CoreRole::Meta.name() => {
+            errors.push(PluginError::new(
+                dir,
+                &toml_file,
+                format!(
+                    "{toml_file} sets `[rework]`, which only core/oat-meta.toml may set; \
+                     the rework loop is the meta-agent's to run"
+                ),
+            ));
+            crate::findings::ReworkSettings::default()
+        }
+        Some(table) => {
+            let settings = crate::findings::ReworkSettings {
+                max_rounds: table
+                    .max_rounds
+                    .unwrap_or_else(crate::findings::ReworkSettings::default_max_rounds),
+                p2_required: table
+                    .p2_required
+                    .unwrap_or_else(crate::findings::ReworkSettings::default_p2_required),
+            };
+            if settings.max_rounds == 0 {
+                errors.push(PluginError::new(
+                    dir,
+                    &toml_file,
+                    format!("{toml_file} sets max_rounds = 0; a work gets at least one review round"),
+                ));
+            }
+            settings
+        }
+    };
     let backend = match core_toml.backend.as_deref() {
         None => None,
         Some(_) if slug != CoreRole::Console.name() => {
@@ -394,6 +427,7 @@ fn load_core_role(
         skills: resolved_skills,
         models,
         backend,
+        rework,
     })
 }
 

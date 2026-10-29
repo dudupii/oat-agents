@@ -141,6 +141,40 @@ places come free, and the workflow log records `dispatch_queued`, `dispatch_dequ
 A queued launch that fails when its turn comes is sent to the Run inbox as a `launch_failed`
 message.
 
+## The rework loop's bounds: `[rework]` and `.oat/rework.toml`
+
+How hard a Run pushes a failed review before escalating to the human is a team's policy, so a
+plugin supplies it — and how expensive a review round is differs per repository, so the
+repository overrides it (ADR-0009, the same pattern as a role's limit above). The plugin's
+defaults live in `[rework]` of its `core/oat-meta.toml`, because the rework loop is the
+meta-agent's to run:
+
+```toml
+[rework]
+max_rounds = 3
+p2_required = true
+```
+
+A repository replaces either field in `.oat/rework.toml`:
+
+```toml
+max_rounds = 5
+p2_required = false
+```
+
+- `max_rounds` — how many review rounds a piece of work gets (default `3`, never below `1`).
+  When a round at the cap still fails its gate, the work is escalated: the workflow log records
+  a `needs_human` entry and the settling review's Run inbox message tells the meta-agent to
+  stop firing rounds and surface the work to the operator.
+- `p2_required` — whether an open `P2` finding fails the gate (default `true`). With it off, a
+  `P2` may be waived like a `P3`. A `P1` is never waivable, whatever these files say.
+
+`meta fire` settles the plugin's defaults and the repository's overrides into the Run record
+once, so a change to either file affects the next Run, never one already running. Two plugins
+setting `[rework]` is a conflict naming both, like any core-role setting; `[rework]` in any
+`core/` file but `core/oat-meta.toml` is refused. An unknown field, a `max_rounds` below `1`
+or malformed TOML refuses the Run with `rework_settings_invalid`.
+
 ## `skills/<skill>/`
 
 A skill is a directory. `SKILL.md` is required and is the same file either backend reads
@@ -190,8 +224,9 @@ none chooses, `oat-agents console open --agent <backend>` picks it, and with no 
 either it is Claude Code; asking for a backend the plugins did not choose is refused rather than
 silently obeyed or ignored. A repository's `.oat/roles.toml` chooses over its plugins (see
 above). `core/oat-meta.toml` may not set `backend`: `oat-meta` runs on the Run's backend, chosen
-by `meta fire --agent` or the repository. Two plugins choosing the console's backend is a
-conflict like any other.
+by `meta fire --agent` or the repository. It is also the one file that may set `[rework]`, the
+plugin's defaults for the rework loop's bounds (see above). Two plugins choosing the console's
+backend is a conflict like any other.
 
 ## Validation
 

@@ -104,6 +104,9 @@ pub struct CoreRoleDefinition {
     pub skills: Vec<SkillRef>,
     /// The backend a plugin chose for this core role; only the console takes one.
     pub backend: Option<Backend>,
+    /// The rework loop's bounds this plugin's teams run under (ADR-0009); only `oat-meta`
+    /// takes them, and a repository overrides them in `.oat/rework.toml`.
+    pub rework: crate::findings::ReworkSettings,
 }
 
 /// Given a role name, its definition; nothing else in the crate knows where roles come from

@@ -1,4 +1,4 @@
-description = "Checks a worker's change against its task independently and returns PASS or FAIL with evidence."
+description = "Checks a worker's change against its task independently and settles with structured findings the gate derives a verdict from."
 start = "existing"
 exec_environment = true
 prior_verification = true

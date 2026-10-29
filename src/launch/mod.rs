@@ -148,6 +148,8 @@ pub fn launch_dispatch(
     let dispatch_dir = store.dispatch_dir_path(&spec.run.id, &dispatch_id);
     fs::create_dir_all(&dispatch_dir)?;
     fs::write(dispatch_dir.join("prompt.md"), &full_prompt)?;
+    // The task exactly as it was given, so a later rework round can quote it verbatim.
+    fs::write(dispatch_dir.join("task.md"), &spec.task)?;
     let script = launch_script(spec.backend);
     let script_path = dispatch_dir.join("launch.sh");
     fs::write(&script_path, &script)?;

@@ -115,6 +115,7 @@ fn catalog_with(exec_environment: bool, prior_verification: bool) -> oat_agents:
                 models: BTreeMap::new(),
                 skills: Vec::new(),
                 backend: None,
+                rework: Default::default(),
             },
         )
         .with_core_role(
@@ -124,6 +125,7 @@ fn catalog_with(exec_environment: bool, prior_verification: bool) -> oat_agents:
                 models: BTreeMap::new(),
                 skills: Vec::new(),
                 backend: None,
+                rework: Default::default(),
             },
         )
         .build()
