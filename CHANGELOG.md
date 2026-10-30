@@ -88,6 +88,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A Claude Dispatch's worktree is pre-marked trusted in `~/.claude.json` at launch, at the
+  single point every launch passes through. The worktree is oat's own creation from the user's
+  repository, and the first-open trust dialog it otherwise raised in an unattended session
+  defaults to refusing trust — stalling the whole Run.
 - The embedded example plugin's cache under `~/.oat/plugins/embedded/` is keyed by its content
   hash instead of the binary version, so a build whose plugin content changed is no longer
   served the copy an earlier same-version binary left behind. Found while field-running the
