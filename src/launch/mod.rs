@@ -68,6 +68,8 @@ pub(crate) const PASS_THROUGH_VARS: &[&str] = &[
     "OAT_TMUX_SOCKET",
     "OAT_CLAUDE_COMMAND",
     "OAT_CODEX_COMMAND",
+    "OAT_CLAUDE_ARGS",
+    "OAT_CODEX_ARGS",
     "CLAUDE_CONFIG_DIR",
     "CODEX_HOME",
 ];

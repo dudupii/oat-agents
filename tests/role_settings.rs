@@ -104,3 +104,44 @@ fn an_unknown_backend_in_roles_toml_refuses_the_run() {
     let error = meta_fire(&world, &repo.path(), &[]).unwrap_err();
     assert_eq!(to_failure(&error).code, codes::ROLE_SETTINGS_INVALID);
 }
+
+#[test]
+fn backend_arguments_from_the_environment_reach_the_launched_session() {
+    let repo = TempRepo::new();
+    let world = TestWorld::new();
+    install_plugin(&world, &repo.path());
+
+    // The launch scripts expand ${OAT_CODEX_ARGS:-} unquoted, so one variable carries the flags
+    // an unattended backend needs (issue #9: --disable api_key_model_discovery) — but only if
+    // the launch forwards it into the session, which until now it did not.
+    let env = world
+        .env()
+        .with_var("OAT_CODEX_ARGS", "--disable api_key_model_discovery")
+        .with_var("OAT_CLAUDE_ARGS", "--verbose");
+    run(
+        parse(&[
+            "meta", "fire", "--prompt", "plan", "--repo", &repo.path().to_string_lossy(),
+            "--name", "kiln", "--agent", "codex",
+        ]),
+        &env,
+    )
+    .unwrap();
+    run(
+        parse(&["role", "fire", "worker", "--name", "bowl", "--prompt", "throw a pot", "--agent", "codex"]),
+        &env.with_var("OAT_RUN_ID", "kiln"),
+    )
+    .unwrap();
+
+    assert!(launched_with(&world, "OAT_CODEX_ARGS=--disable api_key_model_discovery"));
+    assert!(launched_with(&world, "OAT_CLAUDE_ARGS=--verbose"));
+    let calls = world.tmux_calls();
+    let sessions: Vec<&String> = calls.iter().filter(|call| call.contains("new-session")).collect();
+    assert_eq!(sessions.len(), 2, "one session for the meta-agent, one for the member");
+    for call in &sessions {
+        assert!(
+            call.contains("OAT_CODEX_ARGS=--disable api_key_model_discovery")
+                && call.contains("OAT_CLAUDE_ARGS=--verbose"),
+            "every launched session carries the backend arguments: {call}"
+        );
+    }
+}
