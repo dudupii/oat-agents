@@ -266,7 +266,10 @@ pub fn bring_up(
 pub fn tear_down(environment: &dyn Environment, log: &EventLog, record: &EnvRecord) -> Result<()> {
     let provider = provider_from_record(environment, record);
     let collected = provider.collect(record);
-    let result = provider.destroy(record).and(collected);
+    // The backend's word comes first, because a container the backend could not be asked
+    // about is still running: dropping the record or logging a destruction now would leave
+    // an orphan no later `env down` can find.
+    provider.destroy(record).and(collected)?;
     let store = EnvStore::open(environment)?;
     store.remove(&record.env_id)?;
     if let Some(run_id) = record.run_id.as_deref() {
@@ -277,7 +280,7 @@ pub fn tear_down(environment: &dyn Environment, log: &EventLog, record: &EnvReco
             json!({ "env_id": record.env_id, "role": record.role }),
         );
     }
-    result
+    Ok(())
 }
 
 /// Tears down every environment registered to `run_id`, continuing past one that fails so a

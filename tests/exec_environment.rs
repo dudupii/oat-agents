@@ -498,7 +498,10 @@ fn an_unreachable_docker_daemon_fails_env_down_rather_than_reporting_removal() {
     let environment = oat_agents::environment::TestEnvironment::new(home)
         .with_var("OAT_DOCKER_COMMAND", docker.to_string_lossy().to_string());
     oat_agents::env::state::EnvStore::open(&environment).unwrap().save(&docker_record()).unwrap();
-    let log = EventLog::for_dir(None);
+    // A real log directory, so "no env_destroyed was written" below says something: a log
+    // that discards its entries would never have one to find.
+    let log_dir = directory.path().join("logs");
+    let log = EventLog::for_dir(Some(log_dir));
 
     let result = oat_agents::env::commands::execute(
         &environment,
@@ -518,6 +521,19 @@ fn an_unreachable_docker_daemon_fails_env_down_rather_than_reporting_removal() {
     assert!(
         error.to_string().contains("daemon"),
         "the failure names the daemon, so it cannot be read as removal: {error:#}"
+    );
+    // The container is still there, so its registration has to survive for a retry of
+    // `env down --env` to find it, and the log must not record a destruction that did not
+    // happen.
+    let store = oat_agents::env::state::EnvStore::open(&environment).unwrap();
+    assert!(
+        store.load("oat-docker-worker-1").is_ok(),
+        "the record of an environment the backend could not remove stays registered"
+    );
+    let events = log.read_run("run").unwrap();
+    assert!(
+        !events.iter().any(|entry| entry.event == "env_destroyed"),
+        "a destruction that did not happen is not logged: {events:?}"
     );
 }
 

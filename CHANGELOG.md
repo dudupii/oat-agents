@@ -20,7 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with `env_backend_error` when the profile's `kind` has changed since the environment was
   placed. A machine where docker is missing or its daemon is unreachable is reported, never
   treated as success: `env doctor` says the CLI and daemon are unreachable, and commands fail
-  with `env_backend_error`. `OAT_DOCKER_COMMAND` names the binary for the backend's own calls
+  with `env_backend_error`. An `env down` that could not remove the container fails the same
+  way and leaves the environment registered — its record and the log say it still exists, so a
+  retry can find it. `OAT_DOCKER_COMMAND` names the binary for the backend's own calls
   (`run`, `exec`, `inspect`, `rm`); building images still uses `docker` (or `devcontainer`)
   from `PATH`.
 
