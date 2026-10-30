@@ -11,6 +11,7 @@
 
 pub mod commands;
 pub mod config;
+pub mod docker;
 pub mod fingerprint;
 pub mod image;
 pub mod integration;
@@ -132,6 +133,11 @@ pub struct EnvRecord {
     pub run_id: Option<String>,
     pub role: String,
     pub profile: String,
+    /// Which backend created this environment, so a later process reaches it through the same
+    /// provider instead of guessing from the machine it happens to run on. Records written
+    /// before the field existed are Kubernetes ones.
+    #[serde(default)]
+    pub kind: config::ProviderKind,
     pub worktree: PathBuf,
     pub container_path: PathBuf,
     pub image_ref: String,
@@ -202,6 +208,22 @@ pub fn now_ms() -> u64 {
     crate::event_log::now_ms()
 }
 
+/// `30s`, `45m`, `4h`, `2d` — enough for a TTL and nothing more. Every backend reads
+/// `idle_ttl` with this, so one machine's profile means the same lifetime whichever provides it.
+pub fn parse_duration(value: &str) -> Option<Duration> {
+    let value = value.trim();
+    let (digits, unit) = value.split_at(value.find(|c: char| !c.is_ascii_digit())?);
+    let amount: u64 = digits.parse().ok()?;
+    let seconds = match unit {
+        "s" => amount,
+        "m" => amount * 60,
+        "h" => amount * 3600,
+        "d" => amount * 86400,
+        _ => return None,
+    };
+    Some(Duration::from_secs(seconds))
+}
+
 /// The rest of the CLI is synchronous and stays that way; async lives and dies inside this
 /// module.
 ///
@@ -258,5 +280,28 @@ mod tests {
         assert_eq!(sanitize("Worker/One"), "worker-one");
         assert_eq!(sanitize("--"), "x");
         assert_eq!(sanitize("oat_env.1"), "oat-env-1");
+    }
+
+    #[test]
+    fn a_ttl_is_read_in_the_units_people_write_it_in() {
+        assert_eq!(parse_duration("30s"), Some(Duration::from_secs(30)));
+        assert_eq!(parse_duration("45m"), Some(Duration::from_secs(2700)));
+        assert_eq!(parse_duration("4h"), Some(Duration::from_secs(14400)));
+        assert_eq!(parse_duration("2d"), Some(Duration::from_secs(172800)));
+        assert_eq!(parse_duration("soon"), None);
+        assert_eq!(parse_duration("4"), None);
+    }
+
+    #[test]
+    fn a_record_without_a_kind_is_still_a_kubernetes_one() {
+        let body = r#"{"env_id":"oat-1","role":"worker","profile":"local","worktree":"/w",
+            "container_path":"/w","image_ref":"oat-w:abc","image_id":"sha256:cafe","pod":"oat-1",
+            "namespace":"agents","context":"local","created_ms":1}"#;
+        let record: EnvRecord = serde_json::from_str(body).unwrap();
+        assert_eq!(record.kind, config::ProviderKind::Kubernetes);
+
+        let docker = body.replace("\"env_id\":\"oat-1\"", "\"kind\":\"docker\",\"env_id\":\"oat-1\"");
+        let record: EnvRecord = serde_json::from_str(&docker).unwrap();
+        assert_eq!(record.kind, config::ProviderKind::Docker);
     }
 }

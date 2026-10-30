@@ -367,6 +367,7 @@ mod tests {
             run_id: Some("run-1".to_owned()),
             role: role.to_owned(),
             profile: "local".to_owned(),
+            kind: crate::env::config::ProviderKind::Kubernetes,
             worktree: worktree.to_path_buf(),
             container_path: worktree.to_path_buf(),
             image_ref: "oat-x:abc".to_owned(),

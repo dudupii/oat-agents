@@ -40,9 +40,10 @@ pub trait ExecEnvironments {
     fn remove_run(&self, environment: &dyn Environment, log: &EventLog, run_id: &str) -> Value;
 }
 
-/// The real implementation: creates a Kubernetes-backed environment and reads the on-disk
-/// ledger. Used by every live launch; a test that wants to exercise `role fire`'s wiring
-/// without a cluster provides its own `ExecEnvironments` instead.
+/// The real implementation: creates an environment through whichever backend the resolved
+/// profile selects — Kubernetes or Docker, the two this repository ships — and reads the
+/// on-disk ledger. Used by every live launch; a test that wants to exercise `role fire`'s
+/// wiring without a cluster or a daemon provides its own `ExecEnvironments` instead.
 pub struct LiveExecEnvironments;
 
 impl ExecEnvironments for LiveExecEnvironments {

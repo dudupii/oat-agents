@@ -8,9 +8,9 @@
 //! command that means one cluster here and another cluster there is not a command anybody can
 //! trust.
 
-use super::config::{ImageLoad, Profile, RunAsUid};
+use super::config::{ImageLoad, ProviderKind, Profile, RunAsUid};
 use super::provider::{ExecEnvironment, ExecProvider, WorkspaceStrategy};
-use super::{block_on, sanitize, EnvRecord, EnvSpec, ExecOutcome, ExecRequest, RUNNER_PATH};
+use super::{block_on, parse_duration, sanitize, EnvRecord, EnvSpec, ExecOutcome, ExecRequest, RUNNER_PATH};
 use crate::error::{codes, err};
 use anyhow::Result;
 use k8s_openapi::api::core::v1::Pod;
@@ -19,7 +19,6 @@ use kube::config::{KubeConfigOptions, Kubeconfig};
 use kube::{Client, Config};
 use serde_json::{json, Value};
 use std::io::Write;
-use std::path::Path;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncRead, AsyncReadExt};
 
@@ -287,6 +286,7 @@ impl ExecProvider for KubernetesProvider {
             run_id: spec.run_id.clone(),
             role: spec.role.clone(),
             profile: self.profile_name.clone(),
+            kind: ProviderKind::Kubernetes,
             worktree: spec.worktree.clone(),
             container_path: binding.container_path,
             image_ref: spec.image.reference.clone(),
@@ -359,6 +359,7 @@ impl ExecProvider for KubernetesProvider {
     fn doctor(&self) -> Result<Value> {
         let mut report = json!({
             "profile": self.profile_name,
+            "kind": "kubernetes",
             "context": self.profile.context,
             "namespace": self.profile.namespace,
             "workspace": format!("{:?}", self.profile.workspace).to_lowercase(),
@@ -550,21 +551,6 @@ fn past_ttl(pod: &Pod, ttl: Option<Duration>) -> bool {
     age_ms > ttl.as_millis() as i64
 }
 
-/// `30s`, `45m`, `4h`, `2d` — enough for a TTL and nothing more.
-fn parse_duration(value: &str) -> Option<Duration> {
-    let value = value.trim();
-    let (digits, unit) = value.split_at(value.find(|c: char| !c.is_ascii_digit())?);
-    let amount: u64 = digits.parse().ok()?;
-    let seconds = match unit {
-        "s" => amount,
-        "m" => amount * 60,
-        "h" => amount * 3600,
-        "d" => amount * 86400,
-        _ => return None,
-    };
-    Some(Duration::from_secs(seconds))
-}
-
 fn tool_report() -> Value {
     let mut tools = serde_json::Map::new();
     for tool in ["docker", "devcontainer", "kind", "minikube"] {
@@ -576,11 +562,6 @@ fn tool_report() -> Value {
         tools.insert(tool.to_owned(), json!(found));
     }
     Value::Object(tools)
-}
-
-pub fn worktree_owner(worktree: &Path) -> Option<(u32, u32)> {
-    use std::os::unix::fs::MetadataExt;
-    std::fs::metadata(worktree).ok().map(|metadata| (metadata.uid(), metadata.gid()))
 }
 
 /// rustls refuses to guess which cryptography to use when more than one provider could be
@@ -690,15 +671,5 @@ mod tests {
         assert_eq!(exit_code(Some(success)), 0);
 
         assert_eq!(exit_code(None), 1, "a stream that ended without a status proves nothing succeeded");
-    }
-
-    #[test]
-    fn a_ttl_is_read_in_the_units_people_write_it_in() {
-        assert_eq!(parse_duration("30s"), Some(Duration::from_secs(30)));
-        assert_eq!(parse_duration("45m"), Some(Duration::from_secs(2700)));
-        assert_eq!(parse_duration("4h"), Some(Duration::from_secs(14400)));
-        assert_eq!(parse_duration("2d"), Some(Duration::from_secs(172800)));
-        assert_eq!(parse_duration("soon"), None);
-        assert_eq!(parse_duration("4"), None);
     }
 }
