@@ -193,6 +193,31 @@ credentials you'd trust an agent with.
 The supported backends today are Claude Code and Codex. You choose one per role, so a single
 team can mix them.
 
+### Unattended sessions and the backend's own daemon
+
+oat-agents has no daemon of its own — but the agent CLIs may. Codex manages an app-server daemon
+by itself, and when the CLI and that daemon disagree on feature settings, a fresh session opens
+with a numbered-choice dialog on screen, cursor on Cancel. Nobody in a Run answers it, and the
+member cannot get past it alone; left alone, the Dispatch sits there forever. The dialog goes
+away once the daemon has the settings the CLI asks for — picking "Restart with these settings"
+on it once applies and persists them (the daemon restarts), and `codex update` or killing the
+stale managed daemon works too; after that, sessions start clean with no flags at all.
+
+Until then, the pass-through variables carry the CLI's side on every launch:
+
+```sh
+OAT_CODEX_ARGS="--disable api_key_model_discovery" oat-agents meta fire …
+```
+
+The value is split on spaces; embedded quotes are not honored. `OAT_CLAUDE_ARGS` works the same
+way for Claude Code. Note the flags state what the CLI wants — the dialog still appears while
+the daemon holds different settings, and that is what the net below catches.
+
+As a safety net for any dialog an interactive backend raises, a timed-out `run wait` reports
+every still-active Dispatch sitting on one as `dialog_ms`, and past five minutes raises it: a
+`needs_human` entry in the workflow log and an `escalation` message in the Run inbox. Nothing is
+killed or settled for you — the meta-agent, or you reading the log, decides.
+
 ## Get started in five commands
 
 <p align="center">

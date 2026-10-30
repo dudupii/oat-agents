@@ -43,12 +43,30 @@ fn run(dir: &Path, args: &[&str]) {
 }
 
 /// Writes a recording tmux stand-in (ticket §7.1): it appends its whole argv to `log_path` and
-/// exits 0. No test in this crate needs a real model or a real tmux server.
+/// exits 0. A `capture-pane -t <target>` is answered from `scratch/pane-<target>.txt` when
+/// `show_pane` put one there, so a test can give a session a screen without a real tmux. No
+/// test in this crate needs a real model or a real tmux server.
 pub fn tmux_stub(scratch: &Path, log_path: &Path) -> PathBuf {
     let script = scratch.join("fake-tmux.sh");
     let contents = format!(
-        "#!/bin/sh\numask 022\nprintf '%s\\n' \"$*\" >> \"{}\"\nexit 0\n",
-        log_path.display()
+        "#!/bin/sh\n\
+         umask 022\n\
+         printf '%s\\n' \"$*\" >> \"{log}\"\n\
+         target=\n\
+         prev=\n\
+         for arg in \"$@\"; do\n\
+         if [ \"$prev\" = \"-t\" ]; then target=$arg; fi\n\
+         prev=$arg\n\
+         done\n\
+         for arg in \"$@\"; do\n\
+         if [ \"$arg\" = \"capture-pane\" ]; then\n\
+         if [ -f \"{scratch}/pane-$target.txt\" ]; then cat \"{scratch}/pane-$target.txt\"; fi\n\
+         exit 0\n\
+         fi\n\
+         done\n\
+         exit 0\n",
+        log = log_path.display(),
+        scratch = scratch.display(),
     );
     std::fs::write(&script, contents).unwrap();
     #[cfg(unix)]
@@ -95,6 +113,16 @@ impl TestWorld {
             .lines()
             .map(|s| s.to_string())
             .collect()
+    }
+
+    /// Gives a session's next `capture-pane` this screen, as the tmux stub would print it.
+    pub fn show_pane(&self, session: &str, text: &str) {
+        std::fs::write(self.scratch.path().join(format!("pane-{session}.txt")), text).unwrap();
+    }
+
+    /// Retires a screen `show_pane` put up: the next `capture-pane` of that session sees none.
+    pub fn clear_pane(&self, session: &str) {
+        let _ = std::fs::remove_file(self.scratch.path().join(format!("pane-{session}.txt")));
     }
 }
 
