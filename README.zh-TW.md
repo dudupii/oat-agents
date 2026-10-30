@@ -150,13 +150,15 @@ agent 是在沒人看著的情況下執行的。沒有人在旁邊一步步核�
 
 ### 無人值守的 session 與 backend 自帶的 daemon
 
-oat-agents 本身沒有 daemon——但 agent CLI 可能有自己的。Codex 會自行管理一個 app-server daemon；當 CLI 和這個 daemon 對 feature settings 的認知不一致時，新開的 session 會先跳出一個編號選單對話框，游標停在 Cancel 上。Run 裡沒有人會去回答它，member 自己也過不了這一關；放著不管，Dispatch 就會永遠停在那裡。讓兩邊保持一致：`codex doctor` 會指出不一致，`codex update` 是解法之一，把舊的 managed daemon 砍掉也行。你也可以用透傳變數把正解配置帶進每一次啟動：
+oat-agents 本身沒有 daemon——但 agent CLI 可能有自己的。Codex 會自行管理一個 app-server daemon；當 CLI 和這個 daemon 對 feature settings 的認知不一致時，新開的 session 會先跳出一個編號選單對話框，游標停在 Cancel 上。Run 裡沒有人會去回答它，member 自己也過不了這一關；放著不管，Dispatch 就會永遠停在那裡。只要 daemon 套用了 CLI 要求的設置，對話框就會消失：在對話框上選一次「Restart with these settings」會套用並持久化該設置（daemon 會重啟），`codex update` 或把舊的 managed daemon 砍掉也行；之後 session 乾淨啟動，完全不需要任何 flag。
+
+在那之前，透傳變數可以把 CLI 這一側的偏好帶進每一次啟動：
 
 ```sh
 OAT_CODEX_ARGS="--disable api_key_model_discovery" oat-agents meta fire …
 ```
 
-值以空白切分；引號不會被特殊處理。`OAT_CLAUDE_ARGS` 對 Claude Code 的作用相同。
+值以空白切分；引號不會被特殊處理。`OAT_CLAUDE_ARGS` 對 Claude Code 的作用相同。要注意：flag 表達的是 CLI 要什麼——daemon 還抱著不同設置的期間，對話框仍會出現，而那正是下面這張網要接住的。
 
 作為任何互動式 backend 彈出對話框時的安全網，逾時的 `run wait` 會把每個還在跑、畫面停在選單上的 Dispatch 以 `dialog_ms` 回報出來；超過五分鐘就會升級：workflow log 記一筆 `needs_human`，Run inbox 多一則 `escalation` 訊息。不會有人替你把 session 砍掉或結案——由 meta-agent（或看著 log 的你）決定。
 

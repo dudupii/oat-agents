@@ -100,9 +100,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `OAT_CODEX_ARGS` and `OAT_CLAUDE_ARGS` reach the launched session. The launch scripts
   already expanded both, but the launch never forwarded them into the tmux session, so any
-  flags set there were silently dropped — including the `--disable api_key_model_discovery`
-  that keeps an unattended codex session off its app-server's feature-settings dialog
-  (issue #9). The console's sessions inherit the same two variables.
+  flags set there were silently dropped. The console's sessions inherit the same two
+  variables. On issue #9's feature-settings dialog in particular, the flags state the CLI's
+  side; the dialog clears only once the app-server daemon applies those settings — its own
+  "Restart with these settings" does that once, persistently — or the CLI and daemon are
+  aligned. Until then, the dialog watch above is the net.
 
 - A Claude Dispatch's worktree is pre-marked trusted in `~/.claude.json` at launch, at the
   single point every launch passes through. The worktree is oat's own creation from the user's
