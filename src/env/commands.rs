@@ -236,7 +236,7 @@ pub fn bring_up(
         run_id: run_id.map(str::to_owned),
         role: role.to_owned(),
         worktree: worktree.clone(),
-        user: super::kubernetes::worktree_owner(&worktree),
+        user: super::workspace::worktree_owner(&worktree),
         image,
     };
     let provider = provider_for(environment, &profile_name, profile);
@@ -489,7 +489,10 @@ pub fn classify(entries: &[LedgerEntry], now: &Fingerprint, against: &EnvRecord)
     })
 }
 
-/// Rebuilds the environment bound to this worktree and replaces its container.
+/// Rebuilds the environment bound to this worktree and replaces its container. The record's
+/// backend is the one that gets the replacement: a profile that has since changed `kind` is
+/// refused rather than followed, because a rebuild that silently swapped backends would
+/// overwrite the record with an environment the previous one's coordinates know nothing about.
 fn rebuild(environment: &dyn Environment, log: &EventLog, args: EnvRebuildArgs) -> Result<Value> {
     let store = EnvStore::open(environment)?;
     let record = match args.env.as_deref() {
@@ -500,6 +503,24 @@ fn rebuild(environment: &dyn Environment, log: &EventLog, args: EnvRebuildArgs) 
             store.find_for_cwd(&cwd, args.role.as_deref())?
         }
     };
+    let config = config::load(environment, Some(&record.worktree))?;
+    let (_, profile) = config::resolve(&config, Some(&record.profile))?;
+    if profile.kind != record.kind {
+        return Err(err(
+            codes::ENV_BACKEND_ERROR,
+            format!(
+                "profile '{}' now selects the {} backend, but environment {} was placed by the \
+                 {} backend; rebuilding it under another backend would replace it somewhere the \
+                 record has never been. Point the profile back at {} or remove the environment \
+                 with `env down` first",
+                record.profile,
+                backend_name(profile.kind),
+                record.env_id,
+                backend_name(record.kind),
+                backend_name(record.kind),
+            ),
+        ));
+    }
     let previous = record.image_id.clone();
     let rebuilt = bring_up(environment, log, Some(&record.profile), record.run_id.as_deref(), &record.role, &record.worktree, true)?;
     Ok(json!({
@@ -510,6 +531,15 @@ fn rebuild(environment: &dyn Environment, log: &EventLog, args: EnvRebuildArgs) 
         "previous_image_id": previous,
         "changed": rebuilt.image_id != previous,
     }))
+}
+
+/// What a backend is called in messages a person reads. The record already carries the enum;
+/// this is only its prose.
+fn backend_name(kind: config::ProviderKind) -> &'static str {
+    match kind {
+        config::ProviderKind::Kubernetes => "kubernetes",
+        config::ProviderKind::Docker => "docker",
+    }
 }
 
 fn status(environment: &dyn Environment, args: EnvStatusArgs) -> Result<Value> {

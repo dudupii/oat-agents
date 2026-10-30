@@ -20,6 +20,15 @@ pub fn for_profile(profile: &Profile) -> Box<dyn WorkspaceStrategy> {
     }
 }
 
+/// The uid and gid that own the worktree. A backend that keeps files written inside the
+/// environment owned by the operator outside it starts from this; one that leaves ownership to
+/// the image ignores it. It lives here, not in any backend, because it is a fact about the
+/// worktree — the same fact whichever provider mounts it.
+pub fn worktree_owner(worktree: &Path) -> Option<(u32, u32)> {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::metadata(worktree).ok().map(|metadata| (metadata.uid(), metadata.gid()))
+}
+
 /// The worktree is mounted from the node at the same absolute path it has on the host. Keeping
 /// the path identical means a command's cwd needs no translation and its output names files
 /// the operator can open.

@@ -15,8 +15,9 @@ pub trait ExecEnvironment {
     fn exec(&self, request: &ExecRequest) -> Result<ExecOutcome>;
 }
 
-/// Creates, finds, and removes environments. One implementation per backend; Kubernetes is the
-/// one this ticket ships (ticket Architecture).
+/// Creates, finds, and removes environments. One implementation per backend; Kubernetes and
+/// Docker are the two this repository ships, and which one a profile gets is decided solely by
+/// its `kind` (ticket Architecture).
 pub trait ExecProvider {
     /// Creates the environment if it is not already there and returns the record that lets any
     /// later process find it again.
@@ -29,7 +30,7 @@ pub trait ExecProvider {
     /// Removes environments left behind by a crashed run and reports what went.
     fn reap(&self, run_id: Option<&str>, all: bool) -> Result<Vec<String>>;
     /// Reports what a person would otherwise have to check by hand before believing a failure
-    /// is theirs and not the cluster's.
+    /// is theirs and not the backend's.
     fn doctor(&self) -> Result<Value>;
 }
 

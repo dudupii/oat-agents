@@ -110,6 +110,27 @@ fn write_docker_exec_profile(repo: &Path, home: &Path) {
     .unwrap();
 }
 
+/// A registered environment the docker backend placed. Docker itself is absent on purpose in
+/// every test that uses it: what is under test is which backend a record reaches, and what it
+/// says when docker cannot be asked.
+fn docker_record() -> EnvRecord {
+    EnvRecord {
+        env_id: "oat-docker-worker-1".to_string(),
+        run_id: Some("run".to_string()),
+        role: "worker".to_string(),
+        profile: "local".to_string(),
+        kind: oat_agents::env::config::ProviderKind::Docker,
+        worktree: PathBuf::from("/"),
+        container_path: PathBuf::from("/"),
+        image_ref: "oat-w:abc".to_string(),
+        image_id: "sha256:fakeimage".to_string(),
+        pod: "oat-docker-worker-1".to_string(),
+        namespace: "docker".to_string(),
+        context: "docker".to_string(),
+        created_ms: 1,
+    }
+}
+
 fn catalog_with(exec_environment: bool, prior_verification: bool) -> oat_agents::role::memory::InMemoryCatalog {
     InMemoryCatalogBuilder::new()
         .with_role(RoleDefinition {
@@ -427,22 +448,7 @@ fn a_registered_docker_environment_reaches_the_docker_backend_again() {
     std::fs::create_dir_all(&home).unwrap();
     let environment = oat_agents::environment::TestEnvironment::new(home)
         .with_var("OAT_DOCKER_COMMAND", missing_docker.to_string_lossy().to_string());
-    let record = EnvRecord {
-        env_id: "oat-docker-worker-1".to_string(),
-        run_id: Some("run".to_string()),
-        role: "worker".to_string(),
-        profile: "local".to_string(),
-        kind: oat_agents::env::config::ProviderKind::Docker,
-        worktree: PathBuf::from("/"),
-        container_path: PathBuf::from("/"),
-        image_ref: "oat-w:abc".to_string(),
-        image_id: "sha256:fakeimage".to_string(),
-        pod: "oat-docker-worker-1".to_string(),
-        namespace: "docker".to_string(),
-        context: "docker".to_string(),
-        created_ms: 1,
-    };
-    oat_agents::env::state::EnvStore::open(&environment).unwrap().save(&record).unwrap();
+    oat_agents::env::state::EnvStore::open(&environment).unwrap().save(&docker_record()).unwrap();
     let log = EventLog::for_dir(None);
 
     let result = oat_agents::env::commands::execute(
@@ -464,4 +470,90 @@ fn a_registered_docker_environment_reaches_the_docker_backend_again() {
         "{error:#}"
     );
     assert!(error.to_string().contains("docker"), "{error:#}");
+}
+
+#[test]
+fn an_unreachable_docker_daemon_fails_env_down_rather_than_reporting_removal() {
+    // A stand-in docker that is there but cannot reach any daemon: it fails the way a real
+    // CLI does when the daemon is down. `env down` must report that failure — a container
+    // docker could not be asked about is not a container that was removed.
+    let directory = tempfile::tempdir().unwrap();
+    let docker = directory.path().join("docker");
+    std::fs::write(
+        &docker,
+        concat!(
+            "#!/bin/sh\n",
+            "echo 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock. ",
+            "Is the docker daemon running?' >&2\n",
+            "exit 1\n",
+        ),
+    )
+    .unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&docker, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let home = directory.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let environment = oat_agents::environment::TestEnvironment::new(home)
+        .with_var("OAT_DOCKER_COMMAND", docker.to_string_lossy().to_string());
+    oat_agents::env::state::EnvStore::open(&environment).unwrap().save(&docker_record()).unwrap();
+    let log = EventLog::for_dir(None);
+
+    let result = oat_agents::env::commands::execute(
+        &environment,
+        &log,
+        oat_agents::env::commands::EnvSubcommand::Down(oat_agents::env::commands::EnvDownArgs {
+            env: Some("oat-docker-worker-1".to_string()),
+            run: None,
+        }),
+    );
+
+    let error = result.expect_err("a daemon that cannot be asked about is not a container removed");
+    assert_eq!(
+        error.downcast_ref::<oat_agents::error::CliFailure>().map(|failure| failure.code.as_str()),
+        Some("env_backend_error"),
+        "{error:#}"
+    );
+    assert!(
+        error.to_string().contains("daemon"),
+        "the failure names the daemon, so it cannot be read as removal: {error:#}"
+    );
+}
+
+#[test]
+fn env_rebuild_refuses_when_the_profile_now_selects_another_backend() {
+    // The record says the docker backend placed this environment; the machine's profile of
+    // the same name now selects kubernetes. Rebuilding must refuse rather than create the
+    // replacement as a pod — a record's backend never changes out from under it.
+    let directory = tempfile::tempdir().unwrap();
+    let repo = directory.path().join("repo");
+    let home = directory.path().join("home");
+    std::fs::create_dir_all(&repo).unwrap();
+    std::fs::create_dir_all(&home).unwrap();
+    write_exec_profile(&repo, &home);
+    let environment = oat_agents::environment::TestEnvironment::new(home);
+    oat_agents::env::state::EnvStore::open(&environment).unwrap().save(&docker_record()).unwrap();
+    let log = EventLog::for_dir(None);
+
+    let result = oat_agents::env::commands::execute(
+        &environment,
+        &log,
+        oat_agents::env::commands::EnvSubcommand::Rebuild(oat_agents::env::commands::EnvRebuildArgs {
+            env: Some("oat-docker-worker-1".to_string()),
+            role: None,
+        }),
+    );
+
+    let error = result.expect_err("rebuilding an environment under another backend is refused");
+    assert_eq!(
+        error.downcast_ref::<oat_agents::error::CliFailure>().map(|failure| failure.code.as_str()),
+        Some("env_backend_error"),
+        "{error:#}"
+    );
+    let message = format!("{error:#}");
+    assert!(
+        message.contains("docker") && message.contains("kubernetes"),
+        "the refusal names both backends, so it cannot be mistaken for a docker failure: {message}"
+    );
 }

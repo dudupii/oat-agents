@@ -7,7 +7,9 @@
 //! container — `docker run -d`, a bind mount for the worktree the way the hostpath strategy
 //! mounts it, `docker exec` for commands — with no scheduler and no manifest to compose. The
 //! profile names everything that changes with the machine; `OAT_DOCKER_COMMAND` names the
-//! binary when it is not `docker` on `PATH` (a test stand-in, or a docker somewhere else).
+//! binary this backend invokes when it is not `docker` on `PATH` (a test stand-in, or a docker
+//! somewhere else). It governs the backend's own calls only: the image is built and inspected
+//! with `docker` (or `devcontainer`) from `PATH`, before this backend is ever constructed.
 
 use super::config::{ProviderKind, Profile, RunAsUid};
 use super::provider::{ExecEnvironment, ExecProvider, WorkspaceBinding, WorkspaceStrategy};
@@ -34,6 +36,10 @@ struct ContainerState {
     image: String,
     running: bool,
     status: String,
+    /// Whether this backend's own labels are on it. A container that happens to own the
+    /// generated name but carries none of them was not created here — it has no worktree bind
+    /// mount, whatever else it has, and must never be reused as an environment.
+    managed: bool,
 }
 
 pub struct DockerProvider {
@@ -75,14 +81,24 @@ impl DockerProvider {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
     }
 
-    /// The same, but a non-zero exit is `None` rather than an error: it is how "no such
-    /// container" is told apart from "could not ask docker at all".
-    fn docker_try(&self, args: &[String]) -> Result<Option<String>> {
+    /// The same, but a failure docker phrases as an absence is `None` rather than an error:
+    /// it is how "no such container" is told apart from "could not ask docker at all". Every
+    /// other failure stays a failure — an unreachable daemon reported as an empty daemon would
+    /// call containers removed that are still running.
+    fn docker_lookup(&self, args: &[String]) -> Result<Option<String>> {
         let output = self.command(args).output().map_err(|error| {
             backend(format!("docker ({}) could not be executed: {error}", self.docker))
         })?;
         if !output.status.success() {
-            return Ok(None);
+            if is_absent(&output.stderr) {
+                return Ok(None);
+            }
+            return Err(backend(format!(
+                "docker {} failed (exit {}): {}",
+                args.join(" "),
+                output.status.code().unwrap_or(-1),
+                detail(&output.stderr, &output.stdout)
+            )));
         }
         Ok(Some(String::from_utf8_lossy(&output.stdout).trim().to_owned()))
     }
@@ -123,24 +139,17 @@ impl DockerProvider {
         argv
     }
 
-    /// The image a container runs, whether it is running and what its status is, or `None`
-    /// when no container has this name. Several facts in one inspect, because every caller
-    /// needs them to agree.
+    /// The image a container runs, whether it is running, what its status is and whether this
+    /// backend's labels are on it, or `None` when no container has this name. Several facts in
+    /// one inspect, because every caller needs them to agree.
     fn container_state(&self, name: &str) -> Result<Option<ContainerState>> {
-        let inspected = self.docker_try(&[
+        let inspected = self.docker_lookup(&[
             "inspect".to_owned(),
             "--format".to_owned(),
-            "{{.Image}} {{.State.Running}} {{.State.Status}}".to_owned(),
+            inspect_format(),
             name.to_owned(),
         ])?;
-        Ok(inspected.map(|text| {
-            let mut fields = text.split(' ');
-            ContainerState {
-                image: fields.next().unwrap_or_default().to_owned(),
-                running: fields.next() == Some("true"),
-                status: fields.next().unwrap_or_default().to_owned(),
-            }
-        }))
+        Ok(inspected.map(|text| parse_inspect(&text, name)))
     }
 
     fn await_running(&self, name: &str) -> Result<()> {
@@ -165,15 +174,23 @@ impl DockerProvider {
 
     /// Installs the runner only if it is not already there. A container outlives many
     /// commands, and anything may have cleaned out its temporary files between two of them.
+    /// The check is a `test -x` through `docker exec`, so a non-zero exit means the test
+    /// failed — the runner is not there — while a docker that cannot be executed at all is a
+    /// backend error, not a container with no runner.
     fn ensure_runner(&self, name: &str) -> Result<()> {
-        let present = self.docker_try(&[
-            "exec".to_owned(),
-            name.to_owned(),
-            "/bin/sh".to_owned(),
-            "-c".to_owned(),
-            format!("test -x {RUNNER_PATH}"),
-        ])?;
-        if present.is_some() {
+        let probe = self
+            .command(&[
+                "exec".to_owned(),
+                name.to_owned(),
+                "/bin/sh".to_owned(),
+                "-c".to_owned(),
+                format!("test -x {RUNNER_PATH}"),
+            ])
+            .output()
+            .map_err(|error| {
+                backend(format!("docker ({}) could not be executed: {error}", self.docker))
+            })?;
+        if probe.status.success() {
             return Ok(());
         }
         self.install_runner(name)
@@ -217,17 +234,20 @@ impl DockerProvider {
     }
 
     /// Removes a container, treating one that is already gone as removed — the Kubernetes
-    /// backend treats a 404 the same way.
+    /// backend treats a 404 the same way. A container that vanished between the inspect and
+    /// the `rm` is as removed as one that was never there, but a docker that cannot be asked
+    /// at all is a backend error, never a removal.
     fn remove(&self, name: &str) -> Result<()> {
         if self.container_state(name)?.is_none() {
             return Ok(());
         }
-        self.docker_output(&["rm".to_owned(), "-f".to_owned(), name.to_owned()]).map(|_| ())
+        self.docker_lookup(&["rm".to_owned(), "-f".to_owned(), name.to_owned()])
+            .map(|_| ())
     }
 
     fn past_ttl(&self, name: &str, ttl: Option<Duration>) -> Result<bool> {
         let Some(ttl) = ttl else { return Ok(false) };
-        let created = self.docker_try(&[
+        let created = self.docker_lookup(&[
             "inspect".to_owned(),
             "--format".to_owned(),
             "{{.Created}}".to_owned(),
@@ -253,9 +273,10 @@ impl ExecProvider for DockerProvider {
         let existing = self.container_state(&spec.env_id)?;
         let create = match &existing {
             None => true,
-            // A container built from a different image is not this environment, no matter
-            // what it is called.
-            Some(state) if state.image != spec.image.id => {
+            // A container this backend did not create — no managed labels, so no worktree
+            // bind mount either — or one built from a different image, is not this
+            // environment, no matter what it is called.
+            Some(state) if !state.managed || state.image != spec.image.id => {
                 self.remove(&spec.env_id)?;
                 true
             }
@@ -511,6 +532,42 @@ fn detail(stderr: &[u8], stdout: &[u8]) -> String {
     text.trim().to_owned()
 }
 
+/// One line of `docker inspect` output into the facts this backend decides on. Pure, so the
+/// reading of it can be tested without a docker. Every field this backend writes is free of
+/// spaces (`sanitize` sees to it), so one pass over the spaces is a faithful parse.
+fn parse_inspect(text: &str, name: &str) -> ContainerState {
+    let mut fields = text.split(' ');
+    ContainerState {
+        image: fields.next().unwrap_or_default().to_owned(),
+        running: fields.next() == Some("true"),
+        status: fields.next().unwrap_or_default().to_owned(),
+        managed: fields.next() == Some(MANAGED_BY) && fields.next() == Some(name),
+    }
+}
+
+/// The `--format` line one inspect asks for: the facts this backend decides on in one round
+/// trip. A container without the labels prints two empty fields for them (a Go template's
+/// `index` yields the zero value for a missing map key), which is exactly how a container
+/// that merely owns the name is told apart from one this backend created. The braces are
+/// doubled for `format!`'s sake — docker receives `{{…}}`, a Go template's delimiters.
+fn inspect_format() -> String {
+    format!(
+        "{{{{.Image}}}} {{{{.State.Running}}}} {{{{.State.Status}}}} \
+         {{{{index .Config.Labels \"{LABEL_MANAGED_BY}\"}}}} \
+         {{{{index .Config.Labels \"{LABEL_ENV}\"}}}}"
+    )
+}
+
+/// Docker has one way of saying a container is not there — `No such object`, or on older CLIs
+/// `No such container`, on stderr — and many ways of failing to answer at all. Only the first
+/// is an absence; a daemon that cannot be reached, a permission the CLI lacks, a configuration
+/// it rejects, are backend errors, because treating them as emptiness would report containers
+/// gone that are still in place.
+fn is_absent(stderr: &[u8]) -> bool {
+    let text = String::from_utf8_lossy(stderr).to_lowercase();
+    text.contains("no such object") || text.contains("no such container")
+}
+
 fn backend(message: String) -> anyhow::Error {
     err(codes::ENV_BACKEND_ERROR, message)
 }
@@ -652,5 +709,55 @@ mod tests {
         assert_eq!(report["docker_cli"], false);
         assert!(report["docker_error"].as_str().is_some_and(|text| !text.is_empty()), "{report}");
         assert!(report.get("docker_daemon").is_none(), "nothing may read as the daemon answering: {report}");
+    }
+
+    #[test]
+    fn only_docker_saying_no_such_thing_is_an_absence() {
+        assert!(is_absent(b"Error: No such object: oat-abc123-worker-0f0f0f0f"));
+        assert!(is_absent(b"Error response from daemon: no such container: oat-c"));
+        assert!(
+            !is_absent(
+                b"Cannot connect to the Docker daemon at unix:///var/run/docker.sock. \
+                 Is the docker daemon running?"
+            ),
+            "an unreachable daemon is a failure to answer, not an empty daemon"
+        );
+        assert!(
+            !is_absent(b"permission denied while trying to connect to the Docker daemon socket"),
+            "a CLI that may not ask is a failure to answer too"
+        );
+    }
+
+    #[test]
+    fn only_a_container_this_backend_labeled_is_one_of_its_own() {
+        let own = parse_inspect("sha256:cafe true running oat-agents oat-abc123-worker-0f0f0f0f", "oat-abc123-worker-0f0f0f0f");
+        assert!(own.managed);
+        assert!(own.running);
+        assert_eq!(own.image, "sha256:cafe");
+        assert_eq!(own.status, "running");
+
+        // A container that happens to own the generated name carries none of the labels, so
+        // the two empty fields say it was not created here — matching image and name is not
+        // enough to install a runner into it.
+        let stranger = parse_inspect("sha256:cafe true running  ", "oat-abc123-worker-0f0f0f0f");
+        assert!(!stranger.managed);
+        let mislabeled = parse_inspect("sha256:cafe true running someone-else oat-abc123-worker-0f0f0f0f", "oat-abc123-worker-0f0f0f0f");
+        assert!(!mislabeled.managed, "the environment label has to name this environment");
+    }
+
+    #[test]
+    fn the_inspect_format_prints_exactly_the_fields_the_parse_reads() {
+        // One literal line, spelled out as docker receives it: `format!` escaping and the
+        // joined lines have to leave exactly one space between the five Go-template fields,
+        // or the parse would read a shifted or glued field on a real docker — which no test
+        // here runs.
+        assert_eq!(
+            inspect_format(),
+            "{{.Image}} {{.State.Running}} {{.State.Status}} \
+             {{index .Config.Labels \"oat-agents.managed-by\"}} \
+             {{index .Config.Labels \"oat-agents.env\"}}"
+        );
+        let format = inspect_format();
+        assert!(format.contains(LABEL_MANAGED_BY) && format.contains(LABEL_ENV));
     }
 }

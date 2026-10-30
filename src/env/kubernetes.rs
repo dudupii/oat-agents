@@ -19,7 +19,6 @@ use kube::config::{KubeConfigOptions, Kubeconfig};
 use kube::{Client, Config};
 use serde_json::{json, Value};
 use std::io::Write;
-use std::path::Path;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncRead, AsyncReadExt};
 
@@ -563,11 +562,6 @@ fn tool_report() -> Value {
         tools.insert(tool.to_owned(), json!(found));
     }
     Value::Object(tools)
-}
-
-pub fn worktree_owner(worktree: &Path) -> Option<(u32, u32)> {
-    use std::os::unix::fs::MetadataExt;
-    std::fs::metadata(worktree).ok().map(|metadata| (metadata.uid(), metadata.gid()))
 }
 
 /// rustls refuses to guess which cryptography to use when more than one provider could be

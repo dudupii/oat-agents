@@ -15,11 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   at the path it already has, `docker exec` for commands — with no scheduler and no YAML.
   Commands run through the same in-container runner and write the same execution ledger as on
   Kubernetes, containers carry labels so `env reap` finds them, and an environment's record
-  says which backend placed it, so `env exec`, `env down` and `env rebuild` reach the docker
-  provider again without re-reading the config. A machine where docker is missing is reported,
-  never treated as success: `env doctor` says the CLI and daemon are unreachable, and
-  commands fail with `env_backend_error`. `OAT_DOCKER_COMMAND` names the binary when it is
-  not `docker` on `PATH`.
+  says which backend placed it, so `env exec` and `env down` reach the docker provider again
+  without re-reading the config; `env rebuild` rebuilds under the record's backend and refuses
+  with `env_backend_error` when the profile's `kind` has changed since the environment was
+  placed. A machine where docker is missing or its daemon is unreachable is reported, never
+  treated as success: `env doctor` says the CLI and daemon are unreachable, and commands fail
+  with `env_backend_error`. `OAT_DOCKER_COMMAND` names the binary for the backend's own calls
+  (`run`, `exec`, `inspect`, `rm`); building images still uses `docker` (or `devcontainer`)
+  from `PATH`.
 
 - A first-class rework loop around review. A review settles with structured findings
   (`dispatch done --findings-file`), each carrying an id, a severity (`P1`/`P2`/`P3`), its
