@@ -164,8 +164,8 @@ or, for a role that starts in an existing worktree and is fired with `--at`, fro
 **Execution environment**
 A container, described by an execution profile, in which a Dispatch's build and test
 commands run instead of the host.
-On Kubernetes, the only provider so far, it is one pod, and the operator-facing surfaces (the
-live view, `docs/exec-environments.md`) call it that. A role that asked for one and ran on the
+On Kubernetes it is one pod, and the operator-facing surfaces (the live view,
+`docs/exec-environments.md`) call it that. A role that asked for one and ran on the
 host is reported as such, never left to be inferred.
 
 **Execution profile**

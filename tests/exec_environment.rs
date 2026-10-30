@@ -32,6 +32,7 @@ impl FakeExec {
                 run_id: Some("run".to_string()),
                 role: "worker".to_string(),
                 profile: "local".to_string(),
+                kind: oat_agents::env::config::ProviderKind::Kubernetes,
                 worktree: PathBuf::from("/w"),
                 container_path: PathBuf::from("/w"),
                 image_ref: "oat-w:abc".to_string(),
@@ -92,6 +93,19 @@ fn write_exec_profile_with_kubeconfig(repo: &Path, home: &Path, kubeconfig: &Pat
             "[profile.local]\ncontext = \"test-context\"\nnamespace = \"test-namespace\"\nkubeconfig = {:?}\n",
             kubeconfig
         ),
+    )
+    .unwrap();
+}
+
+/// A profile whose `kind` is docker. `context`/`namespace` stay in the table — the shared
+/// shape requires them — but nothing docker-side reads them.
+fn write_docker_exec_profile(repo: &Path, home: &Path) {
+    std::fs::create_dir_all(repo.join(".oat")).unwrap();
+    std::fs::write(repo.join(".oat/exec.toml"), "default_profile = \"local\"\n").unwrap();
+    std::fs::create_dir_all(home.join(".oat")).unwrap();
+    std::fs::write(
+        home.join(".oat/exec.toml"),
+        "[profile.local]\nkind = \"docker\"\ncontext = \"docker\"\nnamespace = \"docker\"\n",
     )
     .unwrap();
 }
@@ -369,4 +383,85 @@ fn env_doctor_reports_what_is_missing_on_a_machine_with_no_cluster() {
     assert!(report["cluster_error"].as_str().is_some_and(|s| !s.is_empty()), "{report}");
     assert_eq!(report["profile"], "local");
     assert!(report.get("tools").is_some(), "{report}");
+}
+
+#[test]
+fn a_docker_profile_reaches_the_docker_backend_and_a_missing_docker_is_reported() {
+    // `OAT_DOCKER_COMMAND` is the docker backend's tmux stub: pointing it at a path that does
+    // not exist makes "no docker on this machine" deterministic wherever the test runs.
+    let directory = tempfile::tempdir().unwrap();
+    let missing_docker = directory.path().join("no-such-docker");
+    let repo = directory.path().join("repo");
+    let home = directory.path().join("home");
+    std::fs::create_dir_all(&repo).unwrap();
+    std::fs::create_dir_all(&home).unwrap();
+    write_docker_exec_profile(&repo, &home);
+    let environment = oat_agents::environment::TestEnvironment::new(home)
+        .with_var("OAT_DOCKER_COMMAND", missing_docker.to_string_lossy().to_string());
+    let log = EventLog::for_dir(None);
+
+    let result = oat_agents::env::commands::execute(
+        &environment,
+        &log,
+        oat_agents::env::commands::EnvSubcommand::Doctor(oat_agents::env::commands::EnvDoctorArgs {
+            profile: None,
+            repo,
+        }),
+    );
+
+    let report = result.expect("doctor reports rather than failing when docker is missing");
+    assert_eq!(report["kind"], "docker", "the profile's kind picked the docker provider: {report}");
+    assert_eq!(report["profile"], "local");
+    assert_eq!(report["docker_cli"], false, "a docker that is not there is said so, never passed: {report}");
+    assert!(report["docker_error"].as_str().is_some_and(|s| !s.is_empty()), "{report}");
+}
+
+#[test]
+fn a_registered_docker_environment_reaches_the_docker_backend_again() {
+    // A record carries its backend's kind, so a later process — `env exec` here — goes to the
+    // docker provider again instead of reading for a cluster. Docker absent on purpose: the
+    // honest outcome is a named failure, never a command that quietly "succeeded".
+    let directory = tempfile::tempdir().unwrap();
+    let missing_docker = directory.path().join("no-such-docker");
+    let home = directory.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let environment = oat_agents::environment::TestEnvironment::new(home)
+        .with_var("OAT_DOCKER_COMMAND", missing_docker.to_string_lossy().to_string());
+    let record = EnvRecord {
+        env_id: "oat-docker-worker-1".to_string(),
+        run_id: Some("run".to_string()),
+        role: "worker".to_string(),
+        profile: "local".to_string(),
+        kind: oat_agents::env::config::ProviderKind::Docker,
+        worktree: PathBuf::from("/"),
+        container_path: PathBuf::from("/"),
+        image_ref: "oat-w:abc".to_string(),
+        image_id: "sha256:fakeimage".to_string(),
+        pod: "oat-docker-worker-1".to_string(),
+        namespace: "docker".to_string(),
+        context: "docker".to_string(),
+        created_ms: 1,
+    };
+    oat_agents::env::state::EnvStore::open(&environment).unwrap().save(&record).unwrap();
+    let log = EventLog::for_dir(None);
+
+    let result = oat_agents::env::commands::execute(
+        &environment,
+        &log,
+        oat_agents::env::commands::EnvSubcommand::Exec(oat_agents::env::commands::EnvExecArgs {
+            env: Some("oat-docker-worker-1".to_string()),
+            role: None,
+            timeout: None,
+            attach: None,
+            command: vec!["true".to_string()],
+        }),
+    );
+
+    let error = result.expect_err("a docker that is not there fails the command");
+    assert_eq!(
+        error.downcast_ref::<oat_agents::error::CliFailure>().map(|failure| failure.code.as_str()),
+        Some("env_backend_error"),
+        "{error:#}"
+    );
+    assert!(error.to_string().contains("docker"), "{error:#}");
 }

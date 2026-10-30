@@ -10,7 +10,7 @@
 use crate::environment::Environment;
 use crate::error::{codes, err};
 use anyhow::Result;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -50,11 +50,12 @@ pub struct Profile {
     pub image: ImageConfig,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ProviderKind {
     #[default]
     Kubernetes,
+    Docker,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, clap::ValueEnum)]
@@ -284,6 +285,23 @@ mod tests {
         let error = toml::from_str::<ExecConfig>("[profile.local]\nnamespace = \"n\"\n")
             .expect_err("context is required");
         assert!(error.to_string().contains("context"), "{error}");
+    }
+
+    #[test]
+    fn a_profile_names_the_backend_that_provides_it() {
+        let config: ExecConfig = toml::from_str(
+            "[profile.local]\nkind = \"docker\"\ncontext = \"c\"\nnamespace = \"n\"\n",
+        )
+        .unwrap();
+        assert_eq!(config.profile["local"].kind, ProviderKind::Docker);
+
+        let config: ExecConfig =
+            toml::from_str("[profile.local]\ncontext = \"c\"\nnamespace = \"n\"\n").unwrap();
+        assert_eq!(
+            config.profile["local"].kind,
+            ProviderKind::Kubernetes,
+            "a profile that says nothing is the shipped backend, as before"
+        );
     }
 
     #[test]

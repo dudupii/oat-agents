@@ -8,6 +8,7 @@
 //! environment is an agent that will eventually forget to.
 
 use super::config;
+use super::docker::DockerProvider;
 use super::fingerprint::{self, Fingerprint};
 use super::image;
 use super::kubernetes::KubernetesProvider;
@@ -238,7 +239,7 @@ pub fn bring_up(
         user: super::kubernetes::worktree_owner(&worktree),
         image,
     };
-    let provider = provider_for(&profile_name, profile);
+    let provider = provider_for(environment, &profile_name, profile);
     let record = provider.ensure(&spec)?;
     let store = EnvStore::open(environment)?;
     store.save(&record)?;
@@ -263,7 +264,7 @@ pub fn bring_up(
 
 /// Removes one environment and says so in the log.
 pub fn tear_down(environment: &dyn Environment, log: &EventLog, record: &EnvRecord) -> Result<()> {
-    let provider = provider_from_record(record);
+    let provider = provider_from_record(environment, record);
     let collected = provider.collect(record);
     let result = provider.destroy(record).and(collected);
     let store = EnvStore::open(environment)?;
@@ -315,7 +316,7 @@ pub fn reap_run(
 ) -> Result<Vec<String>> {
     let config = config::load(environment, Some(repo))?;
     let (resolved_name, profile) = config::resolve(&config, profile_name)?;
-    let provider = provider_for(&resolved_name, profile);
+    let provider = provider_for(environment, &resolved_name, profile);
     let removed = provider.reap(run_id, all)?;
     let store = EnvStore::open(environment)?;
     for name in &removed {
@@ -373,7 +374,7 @@ fn exec(environment: &dyn Environment, args: EnvExecArgs) -> Result<Value> {
         timeout: args.timeout.map(Duration::from_secs),
         attach: args.attach.is_some(),
     };
-    let provider = provider_from_record(&record);
+    let provider = provider_from_record(environment, &record);
     let target = provider.attach(&record)?;
 
     // The tree is read on both sides of the command. Before, because what a command verifies
@@ -537,7 +538,7 @@ fn doctor(environment: &dyn Environment, args: EnvDoctorArgs) -> Result<Value> {
     let config = config::load(environment, Some(&repo))?;
     let (profile_name, profile) = config::resolve(&config, args.profile.as_deref())?;
     let devcontainer = image::devcontainer_dir(&repo);
-    let provider = provider_for(&profile_name, profile);
+    let provider = provider_for(environment, &profile_name, profile);
     let mut report = provider.doctor()?;
     if let Some(object) = report.as_object_mut() {
         object.insert(
@@ -582,17 +583,21 @@ fn reap(environment: &dyn Environment, log: &EventLog, args: EnvReapArgs) -> Res
     Ok(json!({ "reaped": removed }))
 }
 
-fn provider_for(profile_name: &str, profile: config::Profile) -> Box<dyn ExecProvider> {
+/// The one place a profile becomes a backend. The kind decides it and nothing else does, so a
+/// second backend is a profile in a TOML file, never a code change anywhere above this.
+fn provider_for(environment: &dyn Environment, profile_name: &str, profile: config::Profile) -> Box<dyn ExecProvider> {
     match profile.kind {
         config::ProviderKind::Kubernetes => Box::new(KubernetesProvider::new(profile_name, profile)),
+        config::ProviderKind::Docker => Box::new(DockerProvider::new(environment, profile_name, profile)),
     }
 }
 
 /// A registered environment carries its own coordinates, so reaching it again never depends on
-/// a config file that may since have changed.
-fn provider_from_record(record: &EnvRecord) -> Box<dyn ExecProvider> {
+/// a config file that may since have changed — not even on the machine still resolving the
+/// same backend, which is why the record carries its kind.
+fn provider_from_record(environment: &dyn Environment, record: &EnvRecord) -> Box<dyn ExecProvider> {
     let profile = config::Profile {
-        kind: config::ProviderKind::Kubernetes,
+        kind: record.kind,
         context: record.context.clone(),
         namespace: record.namespace.clone(),
         workspace: config::WorkspaceKind::Hostpath,
@@ -602,7 +607,10 @@ fn provider_from_record(record: &EnvRecord) -> Box<dyn ExecProvider> {
         ready_timeout_secs: None,
         image: config::ImageConfig::default(),
     };
-    Box::new(KubernetesProvider::new(&record.profile, profile))
+    match record.kind {
+        config::ProviderKind::Kubernetes => Box::new(KubernetesProvider::new(&record.profile, profile)),
+        config::ProviderKind::Docker => Box::new(DockerProvider::new(environment, &record.profile, profile)),
+    }
 }
 
 fn canonical(path: &Path) -> Result<PathBuf> {
@@ -628,6 +636,7 @@ mod tests {
             run_id: Some("run-1".to_owned()),
             role: "reviewer".to_owned(),
             profile: "local".to_owned(),
+            kind: config::ProviderKind::Kubernetes,
             worktree: PathBuf::from("/w"),
             container_path: PathBuf::from("/w"),
             image_ref: "oat-x:abc".to_owned(),
