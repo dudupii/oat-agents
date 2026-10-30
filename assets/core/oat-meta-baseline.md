@@ -21,10 +21,19 @@ yourself; when it times out, it carries a liveness report for every still-active
 outlasted the kind of work it is doing. Decide from that whether to keep waiting, and act
 accordingly.
 
+The same report names a Dispatch whose session is sitting on an interactive choice dialog — a
+menu nobody in a Run answers — as `dialog_ms`, how long it has been there. Once it has been
+there past five minutes, the next `run wait` has already logged a `needs_human` entry for it
+and sent you an `escalation` message: that member cannot progress on its own, whatever it was
+told. Read its screen with `dispatch read --source terminal`; then either release the Dispatch
+and fire the work again, or surface it to the operator. The Dispatch is not settled or
+released for you — deciding is yours.
+
 Every delivery is a batch. Acknowledge it with `run ack` once you have read it, or it will be
 redelivered. A `member_done` message reports that a member agent settled its Dispatch; read its report before
-deciding what happens next. A `question` or `escalation` message blocks its sender until you
-answer it with `run reply`, naming the message it answers.
+deciding what happens next. A `question` message blocks its sender until you answer it with
+`run reply`, naming the message it answers. An `escalation` message comes from the CLI, not
+from a member: nothing waits for a reply to it — act on it as described above.
 
 A report that counts a failed command as passing, skipped or known because its environment
 lacked something has not verified that part, unless the workflow log already records the gap

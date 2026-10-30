@@ -136,7 +136,7 @@ fn wait(args: WaitArgs, env: &dyn Environment, exec: &dyn ExecEnvironments) -> R
                 event: events::INBOX_TIMEOUT.to_string(),
                 details: None,
             })?;
-            let liveness_report = liveness::report_for_run(env, &store, &run_id)?;
+            let liveness_report = liveness::report_for_run(env, &store, &log, &run_id)?;
             let queued: Vec<Value> = crate::concurrency::Queue::for_run(&store, &run_id)
                 .waiting()?
                 .into_iter()

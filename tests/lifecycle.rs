@@ -612,3 +612,225 @@ fn a_malformed_link_changes_nothing() {
     let show = run_json(parse(&["checklist", "show"]), &env, &catalog);
     assert_eq!(show["checklist"]["items"], serde_json::json!(["glaze pots"]));
 }
+
+// ---- the dialog watch (issue #9): a session wedged on an interactive choice dialog ----
+
+/// The modal from issue #9, as the field battery captured it.
+const FIELD_MODAL: &str = "Background server has incompatible feature settings\nThis session requires api_key_model_discovery to be disabled\n… 1. Run without daemon this time   2. Restart with these settings   › 3. Cancel\n";
+
+fn wall_now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64
+}
+
+/// One `run wait` that times out (nothing is in the inbox) and returns the liveness report.
+fn timed_out_wait(world: &TestWorld, catalog: &dyn oat_agents::role::RoleCatalog, run_id: &str) -> serde_json::Value {
+    let cli = parse(&["run", "wait", "--run", run_id, "--timeout-ms", "300"]);
+    let result = run_json(cli, &world.env(), catalog);
+    assert_eq!(result["timed_out"], true, "{result}");
+    result
+}
+
+fn agent_entry<'a>(report: &'a serde_json::Value, dispatch_id: &str) -> &'a serde_json::Value {
+    report["agents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["dispatch_id"] == dispatch_id)
+        .unwrap_or_else(|| panic!("no liveness entry for {dispatch_id}: {report}"))
+}
+
+fn log_entries(world: &TestWorld, catalog: &dyn oat_agents::role::RoleCatalog, run_id: &str) -> Vec<serde_json::Value> {
+    let cli = parse(&["log", "show", "--run", run_id, "--format", "json"]);
+    run_json(cli, &world.env(), catalog)["entries"].as_array().unwrap().clone()
+}
+
+/// A fired codex worker whose pane shows the field modal, with its dialog marker pre-seeded
+/// `age_ms` old so no test waits out the real threshold.
+fn dialog_run(age_ms: Option<i64>) -> (TestWorld, String, serde_json::Value, String) {
+    let repo = TempRepo::new();
+    let world = TestWorld::new();
+    common::install_pottery_plugin(&world, &repo.path());
+    let catalog = fixture_catalog();
+
+    let fire = parse(&[
+        "meta", "fire", "--prompt", "plan", "--repo", &repo.path().to_string_lossy(),
+        "--name", "run-d", "--agent", "claude",
+    ]);
+    run_json(fire, &world.env(), &catalog);
+    let run_id = "run-d".to_string();
+
+    let env_with_run = world.env().with_var("OAT_RUN_ID", &run_id);
+    let role_fire = parse(&[
+        "role", "fire", "worker", "--name", "w1", "--prompt", "do work", "--agent", "codex",
+    ]);
+    let worker = run_json(role_fire, &env_with_run, &catalog);
+    let session = worker["session"].as_str().unwrap().to_string();
+    world.show_pane(&session, FIELD_MODAL);
+    if let Some(age_ms) = age_ms {
+        let dispatch_dir = std::path::PathBuf::from(worker["dispatch_dir"].as_str().unwrap());
+        std::fs::write(
+            dispatch_dir.join("dialog.json"),
+            format!("{{\"first_seen_ms\":{}}}", wall_now_ms() - age_ms),
+        )
+        .unwrap();
+    }
+    let dispatch_id = worker["dispatch_id"].as_str().unwrap().to_string();
+    (world, run_id, worker, dispatch_id)
+}
+
+#[test]
+fn a_dispatch_stuck_on_a_choice_dialog_escalates_on_the_next_wait() {
+    let (world, run_id, worker, dispatch_id) = dialog_run(Some(360_000));
+    let catalog = fixture_catalog();
+
+    let report = timed_out_wait(&world, &catalog, &run_id);
+    let entry = agent_entry(&report["liveness"], &dispatch_id);
+    assert!(entry["dialog_ms"].as_i64().unwrap() >= 300_000, "the pane has shown the menu for six minutes: {entry}");
+    assert_eq!(entry["escalated"], true, "{entry}");
+
+    // The raise: a needs_human entry naming the Dispatch, and an escalation message the next
+    // wait delivers — it was appended after this wait's inbox pass, not during it.
+    let needs_human = log_entries(&world, &catalog, &run_id)
+        .into_iter()
+        .find(|e| e["event"] == "needs_human" && e["details"]["reason"] == "dialog_stall")
+        .expect("a needs_human entry was logged");
+    assert_eq!(needs_human["dispatch_id"], dispatch_id);
+    assert!(needs_human["details"]["pane_tail"].as_str().unwrap().contains("Run without daemon"), "{}", needs_human);
+
+    let marker = std::fs::read_to_string(
+        std::path::PathBuf::from(worker["dispatch_dir"].as_str().unwrap()).join("dialog.json"),
+    )
+    .unwrap();
+    assert!(marker.contains("escalated_at_ms"), "the marker remembers the raise: {marker}");
+
+    let wait_cli = parse(&["run", "wait", "--run", &run_id, "--ack", "--timeout-ms", "5000"]);
+    let delivery = run_json(wait_cli, &world.env(), &catalog);
+    assert_eq!(delivery["timed_out"], false, "{delivery}");
+    let message = &delivery["messages"][0];
+    assert_eq!(message["kind"], "escalation", "{delivery}");
+    assert_eq!(message["dispatch_id"], dispatch_id);
+    assert!(message["message"].as_str().unwrap().contains("dispatch read --source terminal"), "{message}");
+}
+
+#[test]
+fn the_dialog_escalation_fires_once_and_clears_when_the_dialog_goes() {
+    let (world, run_id, worker, dispatch_id) = dialog_run(Some(360_000));
+    let catalog = fixture_catalog();
+    let session = worker["session"].as_str().unwrap().to_string();
+
+    timed_out_wait(&world, &catalog, &run_id); // raises
+    world.clear_pane(&session);
+    let wait_cli = parse(&["run", "wait", "--run", &run_id, "--ack", "--timeout-ms", "5000"]);
+    run_json(wait_cli, &world.env(), &catalog); // takes the escalation delivery away
+
+    let report = timed_out_wait(&world, &catalog, &run_id);
+    let entry = agent_entry(&report["liveness"], &dispatch_id);
+    assert_eq!(entry["dialog_ms"], serde_json::Value::Null, "the menu is gone: {entry}");
+    assert_eq!(entry["escalated"], false, "{entry}");
+    let marker = std::path::PathBuf::from(worker["dispatch_dir"].as_str().unwrap()).join("dialog.json");
+    assert!(!marker.exists(), "a cleared dialog leaves no marker behind");
+
+    let inbox_dir = world
+        .scratch
+        .path()
+        .join("state")
+        .join("runs")
+        .join(&run_id)
+        .join("inbox");
+    let escalations = std::fs::read_dir(&inbox_dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("json"))
+        .filter(|e| {
+            std::fs::read_to_string(e.path())
+                .map(|text| text.contains("\"escalation\"") && text.contains(&dispatch_id))
+                .unwrap_or(false)
+        })
+        .count();
+    assert_eq!(escalations, 1, "the raise happened exactly once");
+    assert_eq!(
+        log_entries(&world, &catalog, &run_id)
+            .into_iter()
+            .filter(|e| e["event"] == "needs_human" && e["details"]["reason"] == "dialog_stall")
+            .count(),
+        1,
+        "and was logged exactly once"
+    );
+}
+
+#[test]
+fn a_dialog_below_the_threshold_is_reported_but_not_escalated() {
+    let (world, run_id, worker, dispatch_id) = dialog_run(None);
+    let catalog = fixture_catalog();
+
+    let report = timed_out_wait(&world, &catalog, &run_id);
+    let entry = agent_entry(&report["liveness"], &dispatch_id);
+    assert!(entry["dialog_ms"].is_number(), "the watch saw the menu arrive: {entry}");
+    assert!(
+        entry["dialog_ms"].as_i64().unwrap() < oat_agents::liveness::DIALOG_AFTER_MS,
+        "{entry}"
+    );
+    assert_eq!(entry["escalated"], false, "{entry}");
+    assert!(
+        !log_entries(&world, &catalog, &run_id)
+            .into_iter()
+            .any(|e| e["event"] == "needs_human"),
+        "nothing was raised yet"
+    );
+    let marker = std::fs::read_to_string(
+        std::path::PathBuf::from(worker["dispatch_dir"].as_str().unwrap()).join("dialog.json"),
+    )
+    .unwrap();
+    assert!(!marker.contains("escalated_at_ms"), "only the arrival was recorded: {marker}");
+}
+
+#[test]
+fn a_working_claude_dispatch_is_not_screened_for_a_dialog() {
+    let repo = TempRepo::new();
+    let world = TestWorld::new();
+    common::install_pottery_plugin(&world, &repo.path());
+    let catalog = fixture_catalog();
+
+    let fire = parse(&[
+        "meta", "fire", "--prompt", "plan", "--repo", &repo.path().to_string_lossy(),
+        "--name", "run-e", "--agent", "claude",
+    ]);
+    run_json(fire, &world.env(), &catalog);
+
+    let env_with_run = world.env().with_var("OAT_RUN_ID", "run-e");
+    let role_fire = parse(&["role", "fire", "worker", "--name", "w1", "--prompt", "do work"]);
+    let worker = run_json(role_fire, &env_with_run, &catalog);
+    let dispatch_id = worker["dispatch_id"].as_str().unwrap().to_string();
+    let session = worker["session"].as_str().unwrap().to_string();
+
+    // A transcript with a tool call still outstanding reads Working however long it has been
+    // silent, and its own numbered output on screen is not dialog evidence.
+    let worktree = worker["worktree"].as_str().unwrap();
+    let slug: String = worktree
+        .chars()
+        .map(|c| if matches!(c, '/' | '.') { '-' } else { c })
+        .collect();
+    let project = world.home.join(".claude").join("projects").join(slug);
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::write(
+        project.join("session.jsonl"),
+        r#"{"type":"assistant","timestamp":"2026-09-22T01:41:00.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}"#,
+    )
+    .unwrap();
+    world.show_pane(&session, FIELD_MODAL);
+
+    let report = timed_out_wait(&world, &catalog, "run-e");
+    let entry = agent_entry(&report["liveness"], &dispatch_id);
+    assert_eq!(entry["liveness"], "working", "{entry}");
+    assert_eq!(entry["dialog_ms"], serde_json::Value::Null, "a Working Dispatch is not screened: {entry}");
+    assert_eq!(entry["escalated"], false, "{entry}");
+    assert!(
+        !std::path::PathBuf::from(worker["dispatch_dir"].as_str().unwrap())
+            .join("dialog.json")
+            .exists(),
+        "no marker was written for it"
+    );
+}

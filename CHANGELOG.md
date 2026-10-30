@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A dialog watch on the liveness report a timed-out `run wait` carries: a still-active
+  Dispatch whose session pane ends in an interactive numbered-choice dialog — a menu nobody
+  in a Run answers, as an unattended codex session wedged on its app-server's
+  feature-settings modal (issue #9) — is now named there as `dialog_ms`, how long the menu
+  has been on screen. Past five minutes the watch raises it: a `needs_human` entry in the
+  workflow log (with the pane's tail as evidence) and an `escalation` Run-inbox message,
+  delivered by the next `run wait`. Inform-only — the Dispatch is neither settled nor
+  released; deciding is the meta-agent's. A Dispatch whose transcript reads `working` is not
+  screened, and a dispatch with no transcript (every codex one) always is.
+
 - A Docker backend for execution environments, as a second implementation of the provider
   seam. A profile with `kind = "docker"` in `.oat/exec.toml` provides its environments as one
   plain long-running container per role worktree — `docker run -d`, the worktree bind-mounted
