@@ -148,6 +148,18 @@ agent 是在沒人看著的情況下執行的。沒有人在旁邊一步步核�
 
 目前支援的 backend 是 Claude Code 和 Codex。每個角色可以各選一個，所以同一個團隊可以混用。
 
+### 無人值守的 session 與 backend 自帶的 daemon
+
+oat-agents 本身沒有 daemon——但 agent CLI 可能有自己的。Codex 會自行管理一個 app-server daemon；當 CLI 和這個 daemon 對 feature settings 的認知不一致時，新開的 session 會先跳出一個編號選單對話框，游標停在 Cancel 上。Run 裡沒有人會去回答它，member 自己也過不了這一關；放著不管，Dispatch 就會永遠停在那裡。讓兩邊保持一致：`codex doctor` 會指出不一致，`codex update` 是解法之一，把舊的 managed daemon 砍掉也行。你也可以用透傳變數把正解配置帶進每一次啟動：
+
+```sh
+OAT_CODEX_ARGS="--disable api_key_model_discovery" oat-agents meta fire …
+```
+
+值以空白切分；引號不會被特殊處理。`OAT_CLAUDE_ARGS` 對 Claude Code 的作用相同。
+
+作為任何互動式 backend 彈出對話框時的安全網，逾時的 `run wait` 會把每個還在跑、畫面停在選單上的 Dispatch 以 `dialog_ms` 回報出來；超過五分鐘就會升級：workflow log 記一筆 `needs_human`，Run inbox 多一則 `escalation` 訊息。不會有人替你把 session 砍掉或結案——由 meta-agent（或看著 log 的你）決定。
+
 ## 五個指令上手
 
 <p align="center">
