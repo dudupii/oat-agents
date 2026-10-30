@@ -119,6 +119,72 @@ fn meta_fire_creates_a_run_a_worktree_and_a_session() {
 }
 
 #[test]
+fn a_claude_launch_pretrusts_its_worktree_so_the_dialog_cannot_stall_it() {
+    let repo = TempRepo::new();
+    let world = TestWorld::new();
+    common::install_pottery_plugin(&world, &repo.path());
+    let env = world.env();
+    let catalog = fixture_catalog();
+
+    let result = run_json(
+        parse(&[
+            "meta",
+            "fire",
+            "--prompt",
+            "plan",
+            "--repo",
+            &repo.path().to_string_lossy(),
+            "--name",
+            "trust",
+            "--agent",
+            "claude",
+        ]),
+        &env,
+        &catalog,
+    );
+    let worktree = result["worktree"].as_str().unwrap().to_string();
+
+    let trust: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(world.home.join(".claude.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        trust["projects"][&worktree]["hasTrustDialogAccepted"], true,
+        "the worktree oat itself created is recorded as trusted: {trust}"
+    );
+}
+
+#[test]
+fn a_codex_launch_never_touches_claude_trust() {
+    let repo = TempRepo::new();
+    let world = TestWorld::new();
+    common::install_pottery_plugin(&world, &repo.path());
+    let env = world.env();
+    let catalog = fixture_catalog();
+
+    run_json(
+        parse(&[
+            "meta",
+            "fire",
+            "--prompt",
+            "plan",
+            "--repo",
+            &repo.path().to_string_lossy(),
+            "--name",
+            "trust",
+            "--agent",
+            "codex",
+        ]),
+        &env,
+        &catalog,
+    );
+
+    assert!(
+        !world.home.join(".claude.json").exists(),
+        "a Codex launch writes nothing to Claude Code's trust file"
+    );
+}
+
+#[test]
 fn fresh_role_gets_its_own_child_worktree() {
     let repo = TempRepo::new();
     let world = TestWorld::new();

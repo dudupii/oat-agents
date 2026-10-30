@@ -99,6 +99,15 @@ pub fn launch_dispatch(
         return Err(e);
     }
 
+    // Claude Code workspace trust (ticket §4.5): every worktree a Dispatch launches
+    // in is created by oat itself from the user's repo, so pre-mark it trusted here,
+    // at the single point every launch passes through — otherwise the first-open
+    // trust dialog blocks the pane (cursor defaults to "No, exit") and stalls the
+    // whole Run. Best effort: a worktree that cannot take the write still launches.
+    if spec.backend == Backend::Claude {
+        let _ = trust_claude_workspace(env, &spec.worktree);
+    }
+
     let settle_command = if spec.is_core {
         "meta finish"
     } else {
